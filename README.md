@@ -30,10 +30,23 @@ Football intelligence is not just about the scoreline. OmniPitch answers the cri
 3. **Multi-Agent Orchestration with Verifiable Evidence Grounding**:
    - **Tactical Analyst Agent**: Decodes strategic patterns and momentum shifts.
    - **Narrator Agent**: Crafts timed broadcast commentary and match summaries.
+   - **Player Focus Agent**: Tracks individual player sprints, top speeds, and tactical involvement.
    - **Grounding Verifier Agent**: Anti-hallucination auditor that validates every statement against raw event IDs (`EVT-XXXX`).
    - **Graceful Fallback**: Rule-based template fallback ensures zero broadcast interruption if external AI services experience latency.
 
-4. **Targeted Hackathon Award Categories**:
+4. **Pro Match Intelligence Center & Tactical Dynamics**:
+   - **Attack Momentum**: Minute-by-minute dominance visualization with event icon markers.
+   - **Head-to-Head Comparative Analytics**: Dynamic xG, ball possession %, shots on target, and tackles won.
+   - **Lineup Ratings & Automated MVP**: Algorithmic performance ratings (0-10 scale) and match MVP spotlight badge.
+   - **Penalty Shot Map**: Spatial half-pitch shot chart scaled by xG value and shot velocity (km/h).
+   - **Tactical System Switcher**: Dynamic formation repositioning (`4-3-3`, `4-2-3-1`, `3-5-2`).
+   - **Web Audio Sound Synthesizer**: Realistic whistle acoustics for kickoffs and major momentum shifts.
+   - **Instant Match Report Export**: One-click download of rich JSON intelligence dossiers.
+
+5. **Microsoft Fabric Lakehouse Integration**:
+   - Automated export of structured match events and physical summaries to Delta Lake format (`fact_match_events`, `dim_player_physical_summary`).
+
+6. **Targeted Hackathon Award Categories**:
    - 🥇 **Grand Prize**: End-to-end impact transforming synthetic football data into personalized intelligence.
    - 🛠️ **Best Use of Microsoft Foundry**: Accelerated model orchestration, tracing, and evaluation.
    - 🤖 **Best Multi-Agent System**: Purposeful multi-agent collaboration with shared state and grounding verification.
@@ -57,6 +70,7 @@ Football intelligence is not just about the scoreline. OmniPitch answers the cri
  [ Multi-Agent System (Microsoft Foundry & Agent Framework) ]
    ├── Tactical Analyst Agent
    ├── Broadcast Narrator Agent
+   ├── Player Focus Agent
    ├── Grounding Verifier Agent (Evidence ID Matching)
    └── Persona & Localization Agent
                │
@@ -64,7 +78,7 @@ Football intelligence is not just about the scoreline. OmniPitch answers the cri
    [ Fast REST / SSE API (Azure Container Apps) ]
          │                               │
          ▼                               ▼
- [ Web Dashboard (Analyst & Fan) ]   [ Machine-Readable JSON Overlays ]
+ [ Web Dashboard & Match Center ]   [ Machine-Readable JSON Overlays ]
 ```
 
 ---
@@ -73,7 +87,7 @@ Football intelligence is not just about the scoreline. OmniPitch answers the cri
 
 ### Prerequisites
 - Python 3.10+
-- Node.js 18+ (for frontend)
+- Modern Web Browser
 
 ### Installation
 ```bash
@@ -90,7 +104,7 @@ pip install -e ".[dev]"
 ```
 
 ### Launching the Interactive Web Dashboard
-OmniPitch comes with an interactive, dark stadium themed web dashboard with 2D pitch telemetry, live multi-agent pipeline monitoring, and dynamic persona switching:
+OmniPitch comes with an interactive, dark stadium themed web dashboard with 2D pitch telemetry, Pro Match Intelligence Center, live multi-agent pipeline monitoring, and dynamic persona switching:
 
 ```bash
 uvicorn omnipitch.api:app --reload --port 8000
@@ -101,6 +115,7 @@ Open **[http://localhost:8000](http://localhost:8000)** in your browser.
 - **Casual Fan Mode**: High-energy action narratives, milestone highlights, and simplified momentum visuals.
 - **Localization**: Live switching between English, Italian, Spanish, and German.
 - **Interactive Pitch**: Real-time canvas rendering ball coordinates $(x,y)$, pass vectors, shot velocities, and defensive pressure.
+- **Pro Match Center**: Attack momentum, comparative stats, dynamic ratings, and penalty shot map.
 
 ---
 
@@ -135,7 +150,7 @@ OmniPitch includes a comprehensive suite of unit and integration tests:
 
 ```bash
 pytest -v
-# 15 passed in <1s
+# 23 passed in <2s
 ```
 
 ---
