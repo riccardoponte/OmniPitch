@@ -2,10 +2,12 @@
 
 import asyncio
 import json
+from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from omnipitch.agents.orchestrator import MultiAgentOrchestrator
 from omnipitch.generator.engine import MatchSimulationEngine
@@ -25,6 +27,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount Web Dashboard Static Assets
+STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def serve_dashboard():
+    """Serves the OmniPitch interactive match intelligence web dashboard."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return {"message": "OmniPitch API is running. Visit /docs for OpenAPI specs."}
 
 # Global in-memory simulation state (can be backed by Azure Cosmos DB)
 simulation_sessions: Dict[str, MatchSimulationEngine] = {}
@@ -141,3 +157,31 @@ async def ingest_external_event(req: IngestEventRequest):
         language=req.language or "en",
     )
     return overlay
+
+
+# ==============================================================================
+# Model Context Protocol (MCP) Endpoints
+# ==============================================================================
+
+class MCPCallRequest(BaseModel):
+    name: str
+    arguments: Dict[str, Any] = {}
+
+
+@app.get("/api/mcp/tools")
+async def list_mcp_tools():
+    """Lists MCP tools for Microsoft Foundry and Copilot Agent Mode."""
+    from omnipitch.agents.mcp_server import OmniPitchMCPServer
+    return {"tools": OmniPitchMCPServer.list_tools()}
+
+
+@app.post("/api/mcp/call")
+async def call_mcp_tool(req: MCPCallRequest):
+    """Executes an MCP tool call."""
+    from omnipitch.agents.mcp_server import OmniPitchMCPServer
+    try:
+        result = await OmniPitchMCPServer.call_tool(req.name, req.arguments)
+        return {"content": result, "is_error": False}
+    except Exception as exc:
+        return {"content": str(exc), "is_error": True}
+

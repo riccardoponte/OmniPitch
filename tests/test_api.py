@@ -15,6 +15,13 @@ def test_health_endpoint():
     assert data["service"] == "OmniPitch API"
 
 
+def test_dashboard_root_endpoint():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "OmniPitch" in response.text
+    assert "pitch-canvas" in response.text
+
+
 def test_match_info_endpoint():
     response = client.get("/api/match/MATCH-2026-TEST/info?seed=42")
     assert response.status_code == 200

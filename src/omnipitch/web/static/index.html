@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniPitch - Personalized Synthetic Match Intelligence on Microsoft AI</title>
+  <meta name="description" content="Real-time multi-agent match intelligence, explainable tactical insights, and broadcast overlays on Microsoft AI Foundry.">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="theme-dark">
+  <div class="app-container">
+    
+    <!-- Top Global Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-group">
+          <div class="logo-badge">⚽ AI</div>
+          <div class="brand-text">
+            <h1>OmniPitch</h1>
+            <span class="tagline">Personalized Match Intelligence &bull; Microsoft AI Foundry</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Match Scoreboard -->
+      <div class="scoreboard-card" id="scoreboard">
+        <div class="team-side home">
+          <span class="team-color-dot home-dot"></span>
+          <span class="team-name" id="home-name">Avalon City FC</span>
+        </div>
+        <div class="score-display">
+          <span class="score-digit" id="home-score">0</span>
+          <span class="score-divider">-</span>
+          <span class="score-digit" id="away-score">0</span>
+        </div>
+        <div class="team-side away">
+          <span class="team-name" id="away-name">Solaria Rovers</span>
+          <span class="team-color-dot away-dot"></span>
+        </div>
+        <div class="clock-badge">
+          <span class="live-indicator"></span>
+          <span id="match-clock">00:00</span>
+        </div>
+      </div>
+
+      <!-- Controls & Persona Switcher -->
+      <div class="header-right">
+        <!-- Persona Toggle -->
+        <div class="control-group">
+          <label class="control-label">VIEWING MODE</label>
+          <div class="segmented-control" id="persona-toggle">
+            <button class="seg-btn active" data-persona="analyst" id="btn-analyst">
+              <span class="icon">🔬</span> Tactical Analyst
+            </button>
+            <button class="seg-btn" data-persona="fan" id="btn-fan">
+              <span class="icon">🎉</span> Casual Fan
+            </button>
+          </div>
+        </div>
+
+        <!-- Language Selector -->
+        <div class="control-group">
+          <label class="control-label">LANGUAGE</label>
+          <select id="lang-select" class="custom-select">
+            <option value="en">🇬🇧 English</option>
+            <option value="it">🇮🇹 Italiano</option>
+            <option value="es">🇪🇸 Español</option>
+            <option value="de">🇩🇪 Deutsch</option>
+          </select>
+        </div>
+
+        <!-- Stream Action Button -->
+        <div class="playback-controls">
+          <button id="btn-stream-toggle" class="btn-primary">
+            <span id="stream-icon">▶</span>
+            <span id="stream-text">Start Match Stream</span>
+          </button>
+          <button id="btn-reset" class="btn-secondary" title="Reset match simulation">↺</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Multi-Agent Pipeline Live Status Bar -->
+    <div class="agent-pipeline-bar">
+      <div class="pipeline-title">
+        <span class="pulse-ring"></span>
+        <span>FOUNDRY AGENT PIPELINE:</span>
+      </div>
+      <div class="pipeline-steps">
+        <div class="agent-step active" id="step-ingest">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <span class="step-name">Azure Ingest</span>
+            <span class="step-role">Event Hubs Stream</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="agent-step" id="step-analyst">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <span class="step-name">Tactical Analyst</span>
+            <span class="step-role">Pattern Detection</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="agent-step" id="step-narrator">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <span class="step-name">Narrator Agent</span>
+            <span class="step-role">Persona Narrative</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="agent-step" id="step-verifier">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <span class="step-name">Grounding Verifier</span>
+            <span class="step-role">Evidence ID Auditor</span>
+          </div>
+        </div>
+        <div class="pipeline-connector"></div>
+        <div class="agent-step" id="step-broadcast">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <span class="step-name">Broadcast Overlay</span>
+            <span class="step-role">JSON Render Feed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Dynamic Grid -->
+    <main class="main-layout">
+      
+      <!-- Left: Interactive 2D Pitch Visualizer -->
+      <section class="pitch-section glass-panel">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>Pitch Telemetry & Spatial Tracking</h2>
+            <span class="badge-subtle" id="pitch-status">Aethelgard Arena &bull; Clear 16°C</span>
+          </div>
+          <div class="pitch-legend">
+            <span class="legend-item"><span class="dot-home"></span> Avalon City</span>
+            <span class="legend-item"><span class="dot-away"></span> Solaria</span>
+            <span class="legend-item"><span class="vector-line"></span> Pass Vector</span>
+          </div>
+        </div>
+
+        <div class="pitch-container" id="pitch-wrapper">
+          <canvas id="pitch-canvas" width="840" height="544"></canvas>
+          
+          <!-- Ball & Vector Overlays (Managed by Canvas & DOM) -->
+          <div class="pitch-watermark">OMNIPITCH SYNTHETIC ENGINE</div>
+          
+          <!-- Spatial Callout Tooltip -->
+          <div id="spatial-callout" class="spatial-callout hidden">
+            <div class="callout-header" id="callout-title">Pass Action</div>
+            <div class="callout-metric" id="callout-metric">Dist: 24m | Diff: 0.42</div>
+          </div>
+        </div>
+
+        <!-- Tactical Gauges Under Pitch -->
+        <div class="tactical-gauges-grid">
+          
+          <!-- Gauge 1: Control vs Chaos -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="gauge-title">CONTROL VS CHAOS</span>
+              <span class="gauge-val" id="val-control">50% Control</span>
+            </div>
+            <div class="meter-bar-track">
+              <div class="meter-bar-fill control-gradient" id="bar-control" style="width: 50%;"></div>
+            </div>
+            <div class="meter-labels">
+              <span>0% Chaos / Frantic</span>
+              <span>100% Dominant Control</span>
+            </div>
+          </div>
+
+          <!-- Gauge 2: Defensive Pressure -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="gauge-title">DEFENSIVE PRESSURE</span>
+              <span class="gauge-val" id="val-pressure">0.53 (Moderate)</span>
+            </div>
+            <div class="meter-bar-track">
+              <div class="meter-bar-fill pressure-gradient" id="bar-pressure" style="width: 53%;"></div>
+            </div>
+            <div class="meter-labels">
+              <span>Low Block</span>
+              <span>Suffocating Press</span>
+            </div>
+          </div>
+
+          <!-- Gauge 3: Game Rhythm Tempo -->
+          <div class="gauge-card">
+            <div class="gauge-header">
+              <span class="gauge-title">GAME RHYTHM TEMPO</span>
+              <span class="gauge-val highlight-badge" id="val-tempo">balanced-contest</span>
+            </div>
+            <p class="gauge-desc" id="desc-tempo">Sliding window tactical tempo classification.</p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Right: Intelligence & Broadcast Overlays -->
+      <section class="intel-section">
+        
+        <!-- Live Verified Broadcast Overlay Card -->
+        <div class="broadcast-card glass-panel" id="broadcast-card">
+          <div class="broadcast-header">
+            <div class="broadcast-badge">
+              <span class="live-dot"></span> LIVE BROADCAST OVERLAY
+            </div>
+            <div class="verification-badge" id="overlay-verified-badge">
+              <span class="check-icon">✓</span> GROUNDED & VERIFIED
+            </div>
+          </div>
+
+          <div class="broadcast-body">
+            <div class="overlay-time" id="overlay-time">00:00</div>
+            <h3 class="overlay-headline" id="overlay-headline">Waiting for match stream...</h3>
+            <p class="overlay-narrative" id="overlay-narrative">
+              Start the stream or select play above to witness real-time multi-agent reasoning, factual grounding, and explainable storytelling.
+            </p>
+          </div>
+
+          <div class="evidence-box">
+            <div class="evidence-title">
+              <span>🔗 Grounding Evidence Citations:</span>
+              <span class="evidence-count" id="evidence-count">0 Event IDs</span>
+            </div>
+            <div class="evidence-tags" id="evidence-tags">
+              <span class="tag-empty">Awaiting citations...</span>
+            </div>
+          </div>
+
+          <div class="broadcast-footer">
+            <div class="footer-meta">
+              <span>Output Format: <code class="code-badge">JSON Machine-Readable</code></span>
+              <span>Generated By: <code class="code-badge" id="overlay-genby">multiagent-foundry</code></span>
+            </div>
+            <button class="btn-inspect-json" id="btn-toggle-json">Inspect Overlay JSON</button>
+          </div>
+
+          <!-- Collapsible JSON Payload Viewer -->
+          <div class="json-inspector hidden" id="json-inspector">
+            <pre><code id="json-code">{}</code></pre>
+          </div>
+        </div>
+
+        <!-- Telemetry & Raw Event Stream Feed -->
+        <div class="telemetry-card glass-panel">
+          <div class="telemetry-header">
+            <h3>Raw Telemetry Stream (Azure Ingest)</h3>
+            <span class="event-counter" id="event-counter">0 events received</span>
+          </div>
+          
+          <div class="telemetry-list" id="telemetry-list">
+            <!-- Dynamic stream rows will be prepended here -->
+            <div class="telemetry-placeholder">
+              <div class="pulse-text">Stream ready. Click "Start Match Stream" above.</div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

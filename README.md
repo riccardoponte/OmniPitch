@@ -89,18 +89,53 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### Running the Match Event Streamer
-```bash
-# Generate 15 sample match events with metrics
-python -m omnipitch.generator.cli --count 15
+### Launching the Interactive Web Dashboard
+OmniPitch comes with an interactive, dark stadium themed web dashboard with 2D pitch telemetry, live multi-agent pipeline monitoring, and dynamic persona switching:
 
-# Stream events in real time with delay
-python -m omnipitch.generator.cli --stream --delay 0.8
+```bash
+uvicorn omnipitch.api:app --reload --port 8000
+```
+Open **[http://localhost:8000](http://localhost:8000)** in your browser.
+
+- **Tactical Analyst Mode**: High-density tactical metrics, pass difficulty, control vs chaos gauge, and pressing indicators.
+- **Casual Fan Mode**: High-energy action narratives, milestone highlights, and simplified momentum visuals.
+- **Localization**: Live switching between English, Italian, Spanish, and German.
+- **Interactive Pitch**: Real-time canvas rendering ball coordinates $(x,y)$, pass vectors, shot velocities, and defensive pressure.
+
+---
+
+## 🤖 Model Context Protocol (MCP) Tools
+
+OmniPitch implements the **Model Context Protocol (MCP)**, allowing **GitHub Copilot Agent Mode** and **Microsoft Foundry** AI agents to autonomously query live tactical intelligence:
+
+- `get_match_tactical_state`: Fetches Control vs Chaos index, defensive pressure, and tempo.
+- `generate_broadcast_overlay`: Triggers the multi-agent reasoning chain for specified persona and language.
+- `simulate_next_event`: Generates chronological physical match telemetry.
+
+Endpoint: `GET /api/mcp/tools` and `POST /api/mcp/call`
+
+---
+
+## ☁️ Azure Cloud Native Deployment (Bicep)
+
+Infrastructure as Code templates are located in [`infra/`](infra/):
+
+```bash
+az group create --name rg-omnipitch-prod --location westeurope
+az deployment group create \
+  --resource-group rg-omnipitch-prod \
+  --template-file infra/main.bicep \
+  --parameters infra/main.parameters.json
 ```
 
-### Running Tests
+---
+
+## 🧪 Automated Testing
+OmniPitch includes a comprehensive suite of unit and integration tests:
+
 ```bash
 pytest -v
+# 15 passed in <1s
 ```
 
 ---
