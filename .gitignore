@@ -66,6 +66,7 @@ local.settings.json
 # Media artifacts & audio renders
 *.wav
 *.webp
+*.mp4
 
 # Local Italian Guides (Excluded from public repo as per hackathon rules)
 README_AGENTE.md
