@@ -82,3 +82,38 @@ def test_fabric_lakehouse_export():
     assert len(summary) > 0
     assert "distance_km" in summary[0]
 
+
+def test_calculate_attack_momentum():
+    from omnipitch.analytics.metrics import calculate_attack_momentum
+    from omnipitch.generator.engine import MatchSimulationEngine
+
+    engine = MatchSimulationEngine(seed=42)
+    events = engine.generate_full_match(event_count=8)
+
+    # Empty window should be 0.0
+    assert calculate_attack_momentum([], "TEAM-AVALON") == 0.0
+
+    momentum = calculate_attack_momentum(events, "TEAM-AVALON")
+    assert -100.0 <= momentum <= 100.0
+
+
+def test_calculate_player_match_rating():
+    from omnipitch.analytics.metrics import calculate_player_match_rating
+
+    # Baseline player with average performance
+    rating, color = calculate_player_match_rating(
+        total_passes=20, completed_passes=16, average_pass_difficulty=0.3,
+        total_shots=1, goals=0
+    )
+    assert 6.0 <= rating <= 7.5
+    assert color in ("green", "orange", "red")
+
+    # Star performance player (goals + assists + tackles)
+    star_rating, star_color = calculate_player_match_rating(
+        total_passes=45, completed_passes=42, average_pass_difficulty=0.5,
+        total_shots=4, goals=2, tackles_won=3, sprint_bursts=4
+    )
+    assert star_rating >= 8.0
+    assert star_color == "green"
+
+

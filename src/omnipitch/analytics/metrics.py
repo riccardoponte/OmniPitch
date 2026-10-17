@@ -127,3 +127,109 @@ def calculate_zonal_territory(events: List[MatchEvent]) -> Dict[str, float]:
     return {
         k: round((v / total) * 100.0, 1) for k, v in counts.items()
     }
+
+
+def calculate_attack_momentum(events_window: List[MatchEvent], home_team_id: str) -> float:
+    """
+    Calculates minute-by-minute Attack Momentum for a time window (e.g. 1 minute).
+    Positive values (+1.0 to +100.0) indicate Home dominance.
+    Negative values (-1.0 to -100.0) indicate Away dominance.
+    0.0 indicates neutral contest.
+    """
+    if not events_window:
+        return 0.0
+
+    home_points = 0.0
+    away_points = 0.0
+
+    for e in events_window:
+        is_home = (e.team_id == home_team_id)
+        pts = 0.0
+
+        if e.event_type.value == "goal":
+            pts += 80.0
+        elif e.event_type.value == "shot":
+            pts += 25.0 + ((e.expected_goals or 0.1) * 35.0)
+        elif e.event_type.value == "pass":
+            # Passes in attacking third carry heavier momentum
+            if (is_home and e.start_coordinates.x > 66.0) or (not is_home and e.start_coordinates.x < 34.0):
+                pts += 12.0
+            else:
+                pts += 4.0
+        elif e.event_type.value in ("tackle", "interception"):
+            pts += 10.0
+        elif e.event_type.value == "pressure":
+            pts += 6.0
+
+        if is_home:
+            home_points += pts
+        else:
+            away_points += pts
+
+    total = home_points + away_points
+    if total == 0:
+        return 0.0
+
+    raw_momentum = ((home_points - away_points) / max(total, 40.0)) * 100.0
+    return round(min(max(raw_momentum, -100.0), 100.0), 1)
+
+
+def calculate_player_match_rating(
+    total_passes: int,
+    completed_passes: int,
+    average_pass_difficulty: float,
+    total_shots: int,
+    goals: int,
+    tackles_won: int = 0,
+    interceptions: int = 0,
+    saves: int = 0,
+    fouls: int = 0,
+    sprint_bursts: int = 0,
+    position: str = "MID"
+) -> Tuple[float, str]:
+    """
+    Multi-factor Player Match Performance Rating algorithm.
+    Returns (rating, rating_color_class):
+    - rating: float between 3.0 and 10.0 (baseline 6.5)
+    - rating_color: 'green' (>= 7.0), 'orange' (6.5 - 6.9), 'red' (< 6.5)
+    """
+    rating = 6.5
+
+    # Passing contribution
+    if total_passes > 0:
+        completion_pct = completed_passes / total_passes
+        # High volume and high accuracy reward
+        rating += (completion_pct - 0.75) * 1.2
+        rating += (average_pass_difficulty - 0.25) * 0.8
+
+    # Goals and Shots
+    rating += goals * 1.1
+    rating += (total_shots - goals) * 0.15
+
+    # Defensive & Goalkeeper contributions
+    rating += tackles_won * 0.25
+    rating += interceptions * 0.20
+    rating += saves * 0.40
+
+    # Physical intensity
+    rating += min(sprint_bursts * 0.08, 0.6)
+
+    # Penalties
+    rating -= fouls * 0.25
+
+    # Position adjustment: GK baseline stability
+    if position == "GK" and goals == 0:
+        rating += 0.3
+
+    # Bound strictly between 3.0 and 10.0
+    final_rating = round(min(max(rating, 3.0), 10.0), 1)
+
+    if final_rating >= 7.0:
+        color = "green"
+    elif final_rating >= 6.5:
+        color = "orange"
+    else:
+        color = "red"
+
+    return final_rating, color
+

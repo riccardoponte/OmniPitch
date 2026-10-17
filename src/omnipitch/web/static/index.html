@@ -76,6 +76,16 @@
           </select>
         </div>
 
+        <!-- Tactical Formation Selector -->
+        <div class="control-group">
+          <label class="control-label">TACTICAL SYSTEM</label>
+          <select id="formation-select" class="custom-select">
+            <option value="4-3-3">4-3-3 High Press</option>
+            <option value="4-2-3-1">4-2-3-1 Midfield Box</option>
+            <option value="3-5-2">3-5-2 Wingbacks</option>
+          </select>
+        </div>
+
         <!-- Language Selector -->
         <div class="control-group">
           <label class="control-label">LANGUAGE</label>
@@ -319,8 +329,114 @@
       </section>
 
     </main>
+
+    <!-- OmniPitch Pro Match Intelligence Suite -->
+    <section class="matchcenter-container glass-panel" id="matchcenter-section">
+      <div class="matchcenter-header">
+        <div class="matchcenter-badge-wrap">
+          <div class="matchcenter-pill">⚡ PRO MATCH INTELLIGENCE</div>
+          <h2>Tactical Dynamics & Match Center</h2>
+          <span class="matchcenter-sub">Longitudinal Match Intelligence &bull; Attack Momentum, H2H Comparison, Lineup Ratings & Interactive Shot Map</span>
+        </div>
+        <div class="matchcenter-controls-wrap">
+          <div class="matchcenter-tabs" id="matchcenter-tabs">
+            <button class="mc-tab-btn active" data-tab="tab-momentum" id="btn-tab-momentum">📈 Attack Momentum</button>
+            <button class="mc-tab-btn" data-tab="tab-comparison" id="btn-tab-comparison">📊 Match Statistics</button>
+            <button class="mc-tab-btn" data-tab="tab-lineups" id="btn-tab-lineups">👥 Ratings & Lineups</button>
+            <button class="mc-tab-btn" data-tab="tab-shotmap" id="btn-tab-shotmap">🎯 Shot Map</button>
+            <button class="mc-tab-btn" data-tab="tab-timeline" id="btn-tab-timeline">⏱️ Incident Timeline</button>
+          </div>
+          <button id="btn-export-match-report" class="btn-inspect-json" title="Download JSON match analytics dossier">📥 Export Match Report</button>
+        </div>
+      </div>
+
+      <!-- Tab 1: Attack Momentum Graph -->
+      <div class="mc-tab-content active" id="tab-momentum">
+        <div class="momentum-card">
+          <div class="momentum-header">
+            <div class="momentum-legend">
+              <span class="legend-chip home-chip"><span class="chip-color home"></span> Avalon City FC (Home Dominance)</span>
+              <span class="legend-chip neutral-chip"><span class="chip-color neutral"></span> Neutral Contest (0)</span>
+              <span class="legend-chip away-chip"><span class="chip-color away"></span> Solaria Rovers (Away Dominance)</span>
+            </div>
+            <div class="momentum-hint">Hover over minute bars to view tactical pressure & key incidents</div>
+          </div>
+          
+          <div class="momentum-chart-wrapper">
+            <canvas id="momentum-canvas" width="1440" height="240"></canvas>
+            <div id="momentum-tooltip" class="momentum-tooltip hidden"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Match Statistics Head-to-Head Comparison -->
+      <div class="mc-tab-content" id="tab-comparison">
+        <div class="h2h-stats-grid" id="h2h-stats-container">
+          <!-- Populated dynamically by app.js -->
+        </div>
+      </div>
+
+      <!-- Tab 3: Lineups & Dynamic Ratings -->
+      <div class="mc-tab-content" id="tab-lineups">
+        <div class="lineups-rating-grid">
+          <!-- Home Lineup -->
+          <div class="team-lineup-column" id="home-lineup-column">
+            <div class="team-lineup-header">
+              <div class="team-dot home-dot"></div>
+              <h3 id="lineup-home-team-name">Avalon City FC</h3>
+              <span class="lineup-formation" id="lineup-home-formation-badge">4-3-3</span>
+            </div>
+            <div class="player-rating-list" id="home-player-ratings">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Away Lineup -->
+          <div class="team-lineup-column" id="away-lineup-column">
+            <div class="team-lineup-header">
+              <div class="team-dot away-dot"></div>
+              <h3 id="lineup-away-team-name">Solaria Rovers</h3>
+              <span class="lineup-formation">4-3-3</span>
+            </div>
+            <div class="player-rating-list" id="away-player-ratings">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Interactive Shot Map -->
+      <div class="mc-tab-content" id="tab-shotmap">
+        <div class="shotmap-wrapper">
+          <div class="shotmap-pitch-wrap">
+            <canvas id="shotmap-canvas" width="800" height="480"></canvas>
+            <div id="shotmap-tooltip" class="shotmap-tooltip hidden"></div>
+          </div>
+          <div class="shotmap-sidebar">
+            <div class="shotmap-legend">
+              <h4>Shot Outcomes</h4>
+              <div class="legend-row"><span class="marker-dot goal-marker"></span> <span>Goal</span></div>
+              <div class="legend-row"><span class="marker-dot saved-marker"></span> <span>Saved / On Target</span></div>
+              <div class="legend-row"><span class="marker-dot missed-marker"></span> <span>Off Target</span></div>
+            </div>
+            <div class="shotmap-summary-box" id="shotmap-summary">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 5: Incident Timeline -->
+      <div class="mc-tab-content" id="tab-timeline">
+        <div class="timeline-stream" id="timeline-stream-list">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </section>
+
   </div>
 
   <script src="/static/app.js"></script>
 </body>
 </html>
+

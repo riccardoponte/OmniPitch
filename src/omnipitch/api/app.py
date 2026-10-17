@@ -50,7 +50,7 @@ orchestrator_sessions: Dict[str, MultiAgentOrchestrator] = {}
 def get_or_create_session(match_id: str, seed: int = 42) -> tuple[MatchSimulationEngine, MultiAgentOrchestrator]:
     if match_id not in simulation_sessions:
         simulation_sessions[match_id] = MatchSimulationEngine(match_id=match_id, seed=seed)
-        orchestrator_sessions[match_id] = MultiAgentOrchestrator()
+        orchestrator_sessions[match_id] = MultiAgentOrchestrator(match_id=match_id)
     return simulation_sessions[match_id], orchestrator_sessions[match_id]
 
 
@@ -137,6 +137,29 @@ async def stream_broadcast_overlays(
             await asyncio.sleep(delay)
 
     return StreamingResponse(overlay_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/match/{match_id}/matchcenter/overview")
+async def get_match_center_overview(match_id: str, seed: int = 42):
+    """
+    Returns comprehensive Pro Match Center intelligence:
+    - Attack Momentum minute-by-minute bars
+    - Head-to-Head Comparative Match Statistics
+    - Starting Lineups with Dynamic Ratings and Match MVP badge
+    - Interactive Shot Map
+    - Incident Timeline
+    """
+    engine, orchestrator = get_or_create_session(match_id, seed)
+
+    # Ensure rich match state exists for match center
+    if len(orchestrator.memory.events_log) < 15:
+        initial_events = engine.generate_full_match(event_count=45)
+        for ev in initial_events:
+            orchestrator.memory.record_event(ev)
+
+    overview = orchestrator.memory.get_match_center_overview(engine.home_team, engine.away_team)
+    return overview
+
 
 
 @app.get("/api/match/{match_id}/fabric/export")

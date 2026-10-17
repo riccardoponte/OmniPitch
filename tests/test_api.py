@@ -68,3 +68,27 @@ def test_fabric_export_endpoint():
     assert "delta_tables" in data
     assert "fact_match_events" in data["delta_tables"]
     assert "dim_player_physical_summary" in data["delta_tables"]
+
+
+def test_match_center_overview_endpoint():
+    response = client.get("/api/match/MATCH-PRO-TEST/matchcenter/overview?seed=42")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["match_id"] == "MATCH-PRO-TEST"
+    assert "attack_momentum" in data
+    assert len(data["attack_momentum"]) > 0
+    assert "comparison_stats" in data
+    assert "expected_goals" in data["comparison_stats"]
+    assert "possession" in data["comparison_stats"]
+    assert "total_shots" in data["comparison_stats"]
+    assert "lineups" in data
+    assert len(data["lineups"]["home"]) == 11
+    assert len(data["lineups"]["away"]) == 11
+    # Check that at least one player is designated MVP
+    all_players = data["lineups"]["home"] + data["lineups"]["away"]
+    mvp_players = [p for p in all_players if p["is_mvp"]]
+    assert len(mvp_players) == 1
+    assert "shot_map" in data
+    assert "timeline" in data
+
+

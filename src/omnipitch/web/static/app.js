@@ -28,6 +28,8 @@ class OmniPitchApp {
     this.homeScore = 0;
     this.awayScore = 0;
     this.latestOverlay = null;
+    this.matchCenterData = null;
+    this.currentFormation = "4-3-3";
 
     // Tactical formation 4-3-3 coordinates (normalized 0-100)
     this.homeFormation = [
@@ -61,6 +63,7 @@ class OmniPitchApp {
     this.initDOM();
     this.initPitch();
     this.renderPitch();
+    this.fetchMatchCenterOverview();
   }
 
   initDOM() {
@@ -122,6 +125,56 @@ class OmniPitchApp {
     fabricBtn.addEventListener("click", () => {
       window.open(`/api/match/${this.matchId}/fabric/export`, "_blank");
     });
+
+    // Tactical Formation Switcher
+    const formationSelect = document.getElementById("formation-select");
+    if (formationSelect) {
+      formationSelect.addEventListener("change", (e) => {
+        this.applyFormation(e.target.value);
+      });
+    }
+
+    // Match Report Export button
+    const reportBtn = document.getElementById("btn-export-match-report");
+    if (reportBtn) {
+      reportBtn.addEventListener("click", () => this.exportMatchReport());
+    }
+
+    // Match Center Tabs Switching
+    const mcTabs = document.querySelectorAll(".mc-tab-btn");
+    mcTabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mcTabs.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const targetId = btn.getAttribute("data-tab");
+        document.querySelectorAll(".mc-tab-content").forEach((c) => c.classList.remove("active"));
+        const target = document.getElementById(targetId);
+        if (target) target.classList.add("active");
+
+        if (targetId === "tab-momentum") this.renderAttackMomentum();
+        if (targetId === "tab-shotmap") this.renderShotMap();
+      });
+    });
+
+    // Momentum canvas hover
+    const momCanvas = document.getElementById("momentum-canvas");
+    if (momCanvas) {
+      momCanvas.addEventListener("mousemove", (e) => this.handleMomentumHover(e));
+      momCanvas.addEventListener("mouseleave", () => {
+        const tip = document.getElementById("momentum-tooltip");
+        if (tip) tip.classList.add("hidden");
+      });
+    }
+
+    // Shot map canvas hover
+    const shotCanvas = document.getElementById("shotmap-canvas");
+    if (shotCanvas) {
+      shotCanvas.addEventListener("mousemove", (e) => this.handleShotMapHover(e));
+      shotCanvas.addEventListener("mouseleave", () => {
+        const tip = document.getElementById("shotmap-tooltip");
+        if (tip) tip.classList.add("hidden");
+      });
+    }
   }
 
   setPersona(persona) {
@@ -147,6 +200,7 @@ class OmniPitchApp {
     document.getElementById("stream-icon").textContent = "⏸";
     document.getElementById("stream-text").textContent = "Pause Match Stream";
     document.getElementById("btn-stream-toggle").style.background = "linear-gradient(135deg, #e11d48, #f43f5e)";
+    this.playWhistleSound();
 
     // Start Overlay SSE stream with player spotlight query
     let overlayUrl = `/api/match/${this.matchId}/overlays/stream?persona=${this.currentPersona}&lang=${this.currentLang}&delay=1.0`;
@@ -333,6 +387,11 @@ class OmniPitchApp {
     }
 
     this.renderPitch();
+
+    // Dynamically update match center overview on milestone events
+    if (this.eventsReceived % 4 === 0 || event.event_type === "goal" || event.event_type === "shot") {
+      this.fetchMatchCenterOverview();
+    }
   }
 
   appendTelemetryRow(event, timecode) {
@@ -567,9 +626,484 @@ class OmniPitchApp {
       ctx.restore();
     });
   }
+
+  /* ==============================================================================
+     Pro Match Intelligence Center & Tactical Dynamics Methods
+     ============================================================================== */
+
+  playWhistleSound() {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(2400, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1800, audioCtx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.26);
+    } catch (e) {}
+  }
+
+  applyFormation(fmt) {
+    this.currentFormation = fmt;
+    const badge = document.getElementById("lineup-home-formation-badge");
+    if (badge) badge.textContent = fmt;
+
+    if (fmt === "4-2-3-1") {
+      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
+      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 22, y: 20 };
+      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 19, y: 40 };
+      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 60 };
+      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 22, y: 80 };
+      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 36, y: 38 };
+      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 36, y: 62 };
+      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 52, y: 50 };
+      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 54, y: 22 };
+      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 74, y: 50 };
+      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 54, y: 78 };
+    } else if (fmt === "3-5-2") {
+      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
+      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 19, y: 30 };
+      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 18, y: 50 };
+      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 70 };
+      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 36, y: 16 };
+      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 40, y: 40 };
+      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 40, y: 60 };
+      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 50, y: 50 };
+      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 36, y: 84 };
+      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 72, y: 40 };
+      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 72, y: 60 };
+    } else {
+      // Default 4-3-3
+      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
+      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 22, y: 20 };
+      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 19, y: 40 };
+      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 60 };
+      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 22, y: 80 };
+      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 38, y: 50 };
+      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 48, y: 32 };
+      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 48, y: 68 };
+      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 70, y: 22 };
+      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 74, y: 50 };
+      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 70, y: 78 };
+    }
+    this.renderPitch();
+  }
+
+  exportMatchReport() {
+    if (!this.matchCenterData) return;
+    const blob = new Blob([JSON.stringify(this.matchCenterData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `OmniPitch-MatchReport-${this.matchId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async fetchMatchCenterOverview() {
+    try {
+      const res = await fetch(`/api/match/${this.matchId}/matchcenter/overview`);
+      if (!res.ok) return;
+      const data = await res.json();
+      this.matchCenterData = data;
+
+      this.renderAttackMomentum();
+      this.renderH2HComparison();
+      this.renderLineupsRatings();
+      this.renderShotMap();
+      this.renderTimeline();
+    } catch (err) {
+      console.warn("Match center overview fetch error:", err);
+    }
+  }
+
+  renderAttackMomentum() {
+    const canvas = document.getElementById("momentum-canvas");
+    if (!canvas || !this.matchCenterData) return;
+    const ctx = canvas.getContext("2d");
+    const pts = this.matchCenterData.attack_momentum || [];
+    if (!pts.length) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Background & center zero line
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.fillRect(0, 0, w, h);
+
+    const centerY = h / 2;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(40, centerY);
+    ctx.lineTo(w - 20, centerY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Minute markers every 15 min
+    ctx.fillStyle = "#64748b";
+    ctx.font = "10px JetBrains Mono";
+    ctx.textAlign = "center";
+    for (let m = 15; m <= 90; m += 15) {
+      const x = 40 + (m / 90) * (w - 70);
+      ctx.fillText(`${m}'`, x, centerY + 14);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+      ctx.beginPath();
+      ctx.moveTo(x, 15);
+      ctx.lineTo(x, h - 15);
+      ctx.stroke();
+    }
+
+    ctx.fillText("0", 25, centerY + 3);
+
+    // Render bars
+    const totalSlots = Math.max(pts.length, 45);
+    const availableWidth = w - 70;
+    const barWidth = Math.max(availableWidth / totalSlots - 3, 4);
+
+    pts.forEach((pt, idx) => {
+      const x = 40 + (idx / totalSlots) * availableWidth;
+      const barH = (Math.abs(pt.value) / 100.0) * (centerY - 30);
+
+      ctx.save();
+      if (pt.value > 0) {
+        // Home dominance (Upward)
+        ctx.fillStyle = "#00f2fe";
+        ctx.shadowColor = "rgba(0, 242, 254, 0.5)";
+        ctx.shadowBlur = 6;
+        ctx.fillRect(x, centerY - barH, barWidth, barH);
+      } else if (pt.value < 0) {
+        // Away dominance (Downward)
+        ctx.fillStyle = "#e11d48";
+        ctx.shadowColor = "rgba(225, 29, 72, 0.5)";
+        ctx.shadowBlur = 6;
+        ctx.fillRect(x, centerY, barWidth, barH);
+      } else {
+        // Neutral
+        ctx.fillStyle = "#334155";
+        ctx.fillRect(x, centerY - 2, barWidth, 4);
+      }
+      ctx.restore();
+
+      // Render incident icons if any
+      if (pt.incidents && pt.incidents.length > 0) {
+        pt.incidents.forEach((inc) => {
+          const iconY = pt.value >= 0 ? Math.max(centerY - barH - 14, 18) : Math.min(centerY + barH + 18, h - 8);
+          ctx.font = "13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(inc.icon || "⚽", x + barWidth / 2, iconY);
+        });
+      }
+    });
+  }
+
+  handleMomentumHover(e) {
+    const canvas = document.getElementById("momentum-canvas");
+    const tip = document.getElementById("momentum-tooltip");
+    if (!canvas || !tip || !this.matchCenterData) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const pts = this.matchCenterData.attack_momentum || [];
+    if (!pts.length) return;
+
+    const totalSlots = Math.max(pts.length, 45);
+    const availableWidth = canvas.width - 70;
+    const relX = mouseX - 40;
+    const idx = Math.floor((relX / availableWidth) * totalSlots);
+
+    if (idx >= 0 && idx < pts.length) {
+      const pt = pts[idx];
+      const domName = pt.value > 5 ? "Avalon City FC" : (pt.value < -5 ? "Solaria Rovers" : "Neutral Contest");
+      let incidentText = "";
+      if (pt.incidents && pt.incidents.length > 0) {
+        incidentText = `<div style="color: #fbbf24; margin-top: 4px;">${pt.incidents.map(i => `${i.icon} ${i.player}`).join(', ')}</div>`;
+      }
+
+      tip.innerHTML = `
+        <div style="font-weight: 800; color: #00f2fe; margin-bottom: 2px;">Minute ${pt.minute}'</div>
+        <div>Dominance: <span style="color: #ffffff; font-weight: 600;">${domName}</span> (${pt.value > 0 ? '+' : ''}${pt.value})</div>
+        ${incidentText}
+      `;
+      tip.style.left = `${Math.min(e.clientX - rect.left + 15, rect.width - 220)}px`;
+      tip.style.top = `${Math.min(e.clientY - rect.top + 10, rect.height - 60)}px`;
+      tip.classList.remove("hidden");
+    } else {
+      tip.classList.add("hidden");
+    }
+  }
+
+  renderH2HComparison() {
+    const container = document.getElementById("h2h-stats-container");
+    if (!container || !this.matchCenterData) return;
+    const stats = this.matchCenterData.comparison_stats;
+    if (!stats) return;
+
+    const metrics = [
+      { key: "expected_goals", label: "Expected Goals (xG)", isFloat: true },
+      { key: "possession", label: "Ball Possession %", isFloat: true, suffix: "%" },
+      { key: "total_shots", label: "Total Shots" },
+      { key: "shots_on_target", label: "Shots on Target" },
+      { key: "big_chances", label: "Big Chances" },
+      { key: "big_chances_missed", label: "Big Chances Missed" },
+      { key: "accurate_passes", label: "Accurate Passes", customVal: true },
+      { key: "corners", label: "Corner Kicks" },
+      { key: "tackles_won", label: "Tackles Won", customVal: true },
+      { key: "fouls", label: "Fouls" },
+    ];
+
+    container.innerHTML = metrics.map((m) => {
+      const data = stats[m.key] || { home: 0, away: 0 };
+      let homeDisplay = data.home;
+      let awayDisplay = data.away;
+
+      let homeVal = typeof data.home === "number" ? data.home : parseFloat(data.home);
+      let awayVal = typeof data.away === "number" ? data.away : parseFloat(data.away);
+
+      if (m.suffix && !m.customVal) {
+        homeDisplay = `${data.home}%`;
+        awayDisplay = `${data.away}%`;
+      }
+
+      const total = (homeVal + awayVal) || 1;
+      const homePct = Math.round((homeVal / total) * 100);
+      const awayPct = 100 - homePct;
+
+      const isHomeLeader = homeVal > awayVal;
+      const isAwayLeader = awayVal > homeVal;
+
+      return `
+        <div class="h2h-stat-row">
+          <div class="h2h-values">
+            <span class="h2h-val-home ${isHomeLeader ? 'leader' : ''}">${homeDisplay}</span>
+            <span class="h2h-label">${m.label}</span>
+            <span class="h2h-val-away ${isAwayLeader ? 'leader' : ''}">${awayDisplay}</span>
+          </div>
+          <div class="h2h-bar-track">
+            <div class="h2h-bar-home ${isHomeLeader ? 'leader' : ''}" style="width: ${homePct}%;"></div>
+            <div class="h2h-bar-away ${isAwayLeader ? 'leader' : ''}" style="width: ${awayPct}%;"></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  renderLineupsRatings() {
+    if (!this.matchCenterData || !this.matchCenterData.lineups) return;
+    const homeList = document.getElementById("home-player-ratings");
+    const awayList = document.getElementById("away-player-ratings");
+    if (!homeList || !awayList) return;
+
+    const renderPlayers = (players) => {
+      return players.map((p) => {
+        const ratingClass = p.rating_color === "green" ? "rating-green" : (p.rating_color === "red" ? "rating-red" : "rating-orange");
+        const mvpBadge = p.is_mvp ? `<span class="mvp-badge">⭐ MVP</span>` : "";
+
+        return `
+          <div class="player-rating-card" onclick="window.omniPitch.selectSpotlightPlayer('${p.name}')">
+            <div class="player-info-left">
+              <span class="player-jersey-badge">${p.number}</span>
+              <span class="player-pos-badge">${p.position}</span>
+              <span class="player-rating-name">${p.name}</span>
+            </div>
+            <div class="player-rating-right">
+              ${mvpBadge}
+              <span class="pro-rating-pill ${ratingClass}">${p.rating.toFixed(1)}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    };
+
+    homeList.innerHTML = renderPlayers(this.matchCenterData.lineups.home || []);
+    awayList.innerHTML = renderPlayers(this.matchCenterData.lineups.away || []);
+  }
+
+  selectSpotlightPlayer(name) {
+    const sel = document.getElementById("player-select");
+    if (sel) {
+      let found = false;
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === name || sel.options[i].text.includes(name)) {
+          sel.selectedIndex = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const opt = new Option(name, name, true, true);
+        sel.add(opt);
+      }
+      this.currentPlayer = name;
+      if (this.isStreaming) this.restartStream();
+    }
+  }
+
+  renderShotMap() {
+    const canvas = document.getElementById("shotmap-canvas");
+    if (!canvas || !this.matchCenterData) return;
+    const ctx = canvas.getContext("2d");
+    const shots = this.matchCenterData.shot_map || [];
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw football pitch penalty half
+    ctx.fillStyle = "#0c2016";
+    ctx.fillRect(0, 0, w, h);
+
+    // Pitch markings
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.lineWidth = 2;
+
+    // Outer boundary
+    ctx.strokeRect(30, 30, w - 60, h - 60);
+
+    // Goal mouth
+    ctx.strokeRect(w - 30, h / 2 - 50, 18, 100);
+
+    // Penalty Area
+    ctx.strokeRect(w - 240, h / 2 - 140, 210, 280);
+
+    // 6-yard Box
+    ctx.strokeRect(w - 100, h / 2 - 70, 70, 140);
+
+    // Penalty Spot
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(w - 140, h / 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Penalty Arc
+    ctx.beginPath();
+    ctx.arc(w - 140, h / 2, 55, Math.PI * 0.65, Math.PI * 1.35);
+    ctx.stroke();
+
+    // Render Shots
+    shots.forEach((s) => {
+      const sx = 30 + (s.x / 100.0) * (w - 70);
+      const sy = 30 + (s.y / 100.0) * (h - 60);
+      const r = Math.max((s.xg || 0.1) * 22, 5);
+
+      ctx.save();
+      if (s.outcome === "goal") {
+        ctx.fillStyle = "#10b981";
+        ctx.shadowColor = "#10b981";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 9px JetBrains Mono";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("⚽", sx, sy);
+      } else if (s.outcome === "saved") {
+        ctx.fillStyle = "#00f2fe";
+        ctx.shadowColor = "#00f2fe";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    // Update Shot Map Summary Sidebar
+    const summary = document.getElementById("shotmap-summary");
+    if (summary) {
+      const goals = shots.filter(s => s.outcome === "goal").length;
+      const totalXg = shots.reduce((sum, s) => sum + (s.xg || 0), 0).toFixed(2);
+      const conversion = shots.length > 0 ? Math.round((goals / shots.length) * 100) : 0;
+
+      summary.innerHTML = `
+        <div class="stat-pill"><span class="stat-num">${shots.length}</span><span class="stat-lbl">Total Shots</span></div>
+        <div class="stat-pill"><span class="stat-num" style="color: #10b981;">${goals}</span><span class="stat-lbl">Goals Scored</span></div>
+        <div class="stat-pill"><span class="stat-num" style="color: #00f2fe;">${totalXg}</span><span class="stat-lbl">Total xG Created</span></div>
+        <div class="stat-pill"><span class="stat-num">${conversion}%</span><span class="stat-lbl">Conversion Rate</span></div>
+      `;
+    }
+  }
+
+  handleShotMapHover(e) {
+    const canvas = document.getElementById("shotmap-canvas");
+    const tip = document.getElementById("shotmap-tooltip");
+    if (!canvas || !tip || !this.matchCenterData) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+    const shots = this.matchCenterData.shot_map || [];
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const hovered = shots.find((s) => {
+      const sx = 30 + (s.x / 100.0) * (w - 70);
+      const sy = 30 + (s.y / 100.0) * (h - 60);
+      const dist = Math.hypot(mx - sx, my - sy);
+      return dist <= Math.max((s.xg || 0.1) * 22, 10);
+    });
+
+    if (hovered) {
+      tip.innerHTML = `
+        <div style="font-weight: 800; color: #00f2fe;">${hovered.player_name} (${hovered.minute}')</div>
+        <div>Outcome: <b style="text-transform: uppercase;">${hovered.outcome}</b></div>
+        <div>xG: <b>${(hovered.xg || 0).toFixed(2)}</b> &bull; Speed: <b>${hovered.shot_speed_kmh} km/h</b></div>
+      `;
+      tip.style.left = `${Math.min(e.clientX - rect.left + 15, rect.width - 200)}px`;
+      tip.style.top = `${Math.min(e.clientY - rect.top + 10, rect.height - 70)}px`;
+      tip.classList.remove("hidden");
+    } else {
+      tip.classList.add("hidden");
+    }
+  }
+
+  renderTimeline() {
+    const list = document.getElementById("timeline-stream-list");
+    if (!list || !this.matchCenterData) return;
+    const timeline = this.matchCenterData.timeline || [];
+
+    if (!timeline.length) {
+      list.innerHTML = `<div style="text-align: center; color: #64748b; padding: 20px;">No incidents recorded yet. Match in progress.</div>`;
+      return;
+    }
+
+    list.innerHTML = timeline.map((item) => {
+      const sideClass = item.is_home ? "home" : "away";
+      const icon = item.type === "goal" ? "⚽" : (item.type === "card" ? "🟨" : "⚡");
+
+      return `
+        <div class="timeline-event-card ${sideClass}">
+          <span class="timeline-minute">${item.minute}'</span>
+          <span class="timeline-icon">${icon}</span>
+          <div class="timeline-details">
+            <span class="timeline-title">${item.title}</span>
+            <span class="timeline-desc">${item.detail}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
 }
 
 // Instantiate on DOMContentLoaded
 window.addEventListener("DOMContentLoaded", () => {
   window.omniPitch = new OmniPitchApp();
 });
+
