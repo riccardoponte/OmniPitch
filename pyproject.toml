@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnipitch"
+version = "0.1.0"
+description = "Personalized Synthetic Match Intelligence on Microsoft AI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "OmniPitch Team"}
+]
+keywords = [
+    "hackathon",
+    "microsoft-foundry",
+    "premier-league",
+    "multi-agent",
+    "synthetic-data",
+    "football-analytics",
+    "azure"
+]
+dependencies = [
+    "pydantic>=2.7.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.27.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0"
+]
+azure = [
+    "azure-eventhub>=5.11.0",
+    "azure-cosmos>=4.6.0",
+    "azure-identity>=1.16.0"
+]
+
+[project.scripts]
+omnipitch-sim = "omnipitch.generator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
