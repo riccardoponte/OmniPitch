@@ -58,3 +58,13 @@ def test_ingest_event_webhook():
     assert overlay["match_id"] == "MATCH-TEST-INGEST"
     assert overlay["is_verified"] is True
     assert len(overlay["evidence_event_ids"]) > 0
+
+
+def test_fabric_export_endpoint():
+    response = client.get("/api/match/MATCH-2026-TEST/fabric/export?seed=42")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["lakehouse_workspace"] == "OmniPitch-Fabric-Analytics"
+    assert "delta_tables" in data
+    assert "fact_match_events" in data["delta_tables"]
+    assert "dim_player_physical_summary" in data["delta_tables"]

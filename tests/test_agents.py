@@ -76,3 +76,35 @@ async def test_mcp_server_tools():
     )
     assert overlay_res["persona"] == "fan"
     assert overlay_res["is_verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_player_focus_agent_and_memory():
+    from omnipitch.agents.memory import MatchBlackboardMemory
+    from omnipitch.agents.player_focus import PlayerFocusAgent
+
+    engine = MatchSimulationEngine(seed=42)
+    events = engine.generate_full_match(event_count=15)
+
+    memory = MatchBlackboardMemory()
+    for e in events:
+        memory.record_event(e)
+
+    # Check top sprinters recorded
+    top_sprinters = memory.get_top_sprinters()
+    assert len(top_sprinters) > 0
+
+    # Test Player Focus Agent on a key player
+    focus_agent = PlayerFocusAgent()
+    target_name = top_sprinters[0].name
+    insight = await focus_agent.process({
+        "target_player": target_name,
+        "memory": memory,
+        "latest_event": events[-1],
+    })
+
+    assert insight is not None
+    assert insight.player_name == target_name
+    assert insight.distance_covered_km >= 0.0
+    assert insight.spotlight_narrative != ""
+    assert len(insight.evidence_event_ids) > 0

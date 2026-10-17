@@ -1,8 +1,8 @@
 """Tactical metric algorithms and calculations for synthetic football analytics."""
 
 import math
-from typing import Tuple
-from omnipitch.models import Coordinates, TacticalContext
+from typing import Dict, List, Tuple
+from omnipitch.models import Coordinates, MatchEvent, TacticalContext
 
 
 def calculate_euclidean_distance(c1: Coordinates, c2: Coordinates) -> float:
@@ -39,6 +39,39 @@ def calculate_pass_difficulty(
     return distance_m, round(difficulty, 2)
 
 
+def calculate_expected_goals(
+    shot_location: Coordinates,
+    defensive_pressure: float
+) -> float:
+    """
+    Computes Expected Goals (xG) based on:
+    - Distance to target goal (assumed at x=100 or x=0, y=50)
+    - Central angle to goal mouth
+    - Opposition defensive pressure factor
+    """
+    target = Coordinates(x=100.0, y=50.0)
+    dist_m = calculate_euclidean_distance(shot_location, target)
+
+    # Base probability decay with distance
+    # 6-yard box (~5m) -> ~0.55+; penalty spot (11m) -> ~0.35; outside box (22m+) -> ~0.04
+    base_xg = math.exp(-dist_m / 14.0) * 0.85
+
+    # Centrality factor (punish sharp angles)
+    y_deviation = abs(shot_location.y - 50.0) / 50.0
+    angle_factor = max(0.2, 1.0 - (y_deviation * 0.7))
+
+    # Defensive pressure reduction
+    pressure_penalty = 1.0 - (defensive_pressure * 0.35)
+
+    xg = base_xg * angle_factor * pressure_penalty
+    return round(min(max(xg, 0.01), 0.92), 2)
+
+
+def is_sprint_speed(speed_kmh: float) -> bool:
+    """Premier League physical performance threshold: sprints exceed 27.0 km/h."""
+    return speed_kmh >= 27.0
+
+
 def evaluate_tactical_state(
     consecutive_passes: int,
     turnovers_last_5_min: int,
@@ -73,3 +106,24 @@ def evaluate_tactical_state(
         defensive_pressure_index=pressure_index,
         game_rhythm_tempo=tempo
     )
+
+
+def calculate_zonal_territory(events: List[MatchEvent]) -> Dict[str, float]:
+    """Calculates percentage of possession across three pitch thirds."""
+    if not events:
+        return {"defensive_third": 33.3, "middle_third": 33.4, "attacking_third": 33.3}
+
+    counts = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
+    for e in events:
+        x = e.start_coordinates.x
+        if x < 33.3:
+            counts["defensive_third"] += 1
+        elif x < 66.6:
+            counts["middle_third"] += 1
+        else:
+            counts["attacking_third"] += 1
+
+    total = len(events)
+    return {
+        k: round((v / total) * 100.0, 1) for k, v in counts.items()
+    }

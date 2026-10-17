@@ -4,8 +4,10 @@ import random
 from typing import Generator, List, Optional
 from omnipitch.analytics.metrics import (
     calculate_euclidean_distance,
+    calculate_expected_goals,
     calculate_pass_difficulty,
     evaluate_tactical_state,
+    is_sprint_speed,
 )
 from omnipitch.generator.models import (
     Coordinates,
@@ -91,6 +93,8 @@ class MatchSimulationEngine:
 
             # Determine goal vs save vs block
             goal_roll = self.rng.random()
+            xg_val = calculate_expected_goals(self.current_ball_pos, tactical_ctx.defensive_pressure_index)
+
             if goal_roll < 0.25:
                 # GOAL!
                 if self.active_team == self.home_team:
@@ -110,6 +114,8 @@ class MatchSimulationEngine:
                     end_coordinates=target_coords,
                     shot_speed_kmh=shot_speed,
                     ball_speed_kmh=shot_speed,
+                    expected_goals=xg_val,
+                    is_sprint_burst=is_sprint_speed(shot_speed * 0.28),
                     is_successful=True,
                     tactical_context=tactical_ctx,
                 )
@@ -134,6 +140,8 @@ class MatchSimulationEngine:
                     end_coordinates=target_coords,
                     shot_speed_kmh=shot_speed,
                     ball_speed_kmh=shot_speed,
+                    expected_goals=xg_val,
+                    is_sprint_burst=is_sprint_speed(shot_speed * 0.28),
                     is_successful=False,
                     tactical_context=tactical_ctx,
                 )
@@ -209,6 +217,7 @@ class MatchSimulationEngine:
                 ball_speed_kmh=pass_speed,
                 pass_distance_m=dist_m,
                 pass_difficulty_rating=diff_rating,
+                is_sprint_burst=is_sprint_speed(player_speed),
                 is_successful=True,
                 tactical_context=tactical_ctx,
             )

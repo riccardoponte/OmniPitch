@@ -52,6 +52,8 @@ class BroadcastOverlayPayload(BaseModel):
     is_verified: bool
     evidence_event_ids: List[str]
     metrics: Dict[str, Any] = Field(default_factory=dict)
+    player_focus: Optional[Dict[str, Any]] = None
+    trace: Optional[Dict[str, Any]] = None
     generated_by: str = "omnipitch-multiagent"
 
 

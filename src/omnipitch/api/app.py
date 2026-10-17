@@ -108,6 +108,7 @@ async def stream_broadcast_overlays(
     match_id: str,
     persona: str = Query(default="analyst", description="'analyst' or 'fan'"),
     lang: str = Query(default="en", description="ISO language code: 'en', 'it', 'es', 'de'"),
+    player: Optional[str] = Query(default=None, description="Player spotlight name for Player Focus Mode"),
     delay: float = Query(default=1.0, ge=0.2, le=5.0),
     max_overlays: int = Query(default=20, ge=3, le=60),
     seed: int = 42,
@@ -115,6 +116,7 @@ async def stream_broadcast_overlays(
     """
     Server-Sent Events (SSE) streaming machine-readable broadcast overlays
     synthesized by the Multi-Agent system (Tactical Analyst -> Narrator -> Verifier).
+    Supports Player Focus Mode with dedicated spotlight tracking.
     """
     engine, orchestrator = get_or_create_session(match_id, seed)
 
@@ -126,6 +128,7 @@ async def stream_broadcast_overlays(
                 event=event,
                 persona=persona,
                 language=lang,
+                target_player=player,
             )
             payload = json.dumps(overlay.model_dump())
             yield f"event: broadcast_overlay\ndata: {payload}\n\n"
@@ -136,11 +139,36 @@ async def stream_broadcast_overlays(
     return StreamingResponse(overlay_generator(), media_type="text/event-stream")
 
 
+@app.get("/api/match/{match_id}/fabric/export")
+async def export_to_microsoft_fabric(match_id: str, seed: int = 42):
+    """
+    Exports synthetic match events and longitudinal physical performance
+    formatted for Microsoft Fabric OneLake Lakehouses and Power BI DirectLake models.
+    """
+    from omnipitch.analytics.fabric_export import MicrosoftFabricLakehouseExporter
+    engine, orchestrator = get_or_create_session(match_id, seed)
+    events = engine.generate_full_match(event_count=50)
+
+    events_table = [MicrosoftFabricLakehouseExporter.format_event_for_lakehouse(e) for e in events]
+    player_summary_table = MicrosoftFabricLakehouseExporter.export_player_physical_summary(orchestrator.memory)
+
+    return {
+        "lakehouse_workspace": "OmniPitch-Fabric-Analytics",
+        "match_id": match_id,
+        "delta_tables": {
+            "fact_match_events": events_table,
+            "dim_player_physical_summary": player_summary_table,
+        },
+        "target_format": "Delta / Parquet (OneLake DirectLake ready)",
+    }
+
+
 class IngestEventRequest(BaseModel):
     match_id: str
     event: MatchEvent
     persona: Optional[str] = "analyst"
     language: Optional[str] = "en"
+    target_player: Optional[str] = None
 
 
 @app.post("/api/events/ingest")

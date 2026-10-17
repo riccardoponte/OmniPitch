@@ -88,6 +88,12 @@ class MatchEvent(BaseModel):
     pass_difficulty_rating: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="0.0 = routine safe pass, 1.0 = high-risk line-breaking pass"
     )
+    expected_goals: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Modeled probability of a shot resulting in a goal (0.01 - 0.99)"
+    )
+    is_sprint_burst: bool = Field(
+        False, description="True if player speed exceeded high-intensity sprint threshold (>27.0 km/h)"
+    )
     is_successful: bool = True
 
     # Tactical context attached to this moment

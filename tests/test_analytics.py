@@ -37,3 +37,48 @@ def test_tactical_state_indices():
     # Frantic turnovers = chaos
     state_chaos = evaluate_tactical_state(consecutive_passes=0, turnovers_last_5_min=4, pitch_zone_x=70.0)
     assert state_chaos.control_vs_chaos_index < 0.35
+
+
+def test_expected_goals_calculation():
+    from omnipitch.analytics.metrics import calculate_expected_goals
+    # Penalty box central shot (close to goal)
+    close_shot = Coordinates(x=92.0, y=50.0)
+    xg_high = calculate_expected_goals(close_shot, defensive_pressure=0.2)
+
+    # Halfway line shot (far from goal)
+    far_shot = Coordinates(x=55.0, y=10.0)
+    xg_low = calculate_expected_goals(far_shot, defensive_pressure=0.8)
+
+    assert xg_high > xg_low
+    assert 0.01 <= xg_high <= 0.99
+    assert 0.01 <= xg_low <= 0.20
+
+
+def test_sprint_detection_threshold():
+    from omnipitch.analytics.metrics import is_sprint_speed
+    assert is_sprint_speed(28.4) is True
+    assert is_sprint_speed(27.0) is True
+    assert is_sprint_speed(24.5) is False
+
+
+def test_fabric_lakehouse_export():
+    from omnipitch.analytics.fabric_export import MicrosoftFabricLakehouseExporter
+    from omnipitch.generator.engine import MatchSimulationEngine
+    from omnipitch.agents.memory import MatchBlackboardMemory
+
+    engine = MatchSimulationEngine(seed=42)
+    events = engine.generate_full_match(event_count=10)
+
+    memory = MatchBlackboardMemory()
+    for e in events:
+        memory.record_event(e)
+
+    record = MicrosoftFabricLakehouseExporter.format_event_for_lakehouse(events[0])
+    assert "event_id" in record
+    assert "match_id" in record
+    assert "control_vs_chaos_index" in record
+
+    summary = MicrosoftFabricLakehouseExporter.export_player_physical_summary(memory)
+    assert len(summary) > 0
+    assert "distance_km" in summary[0]
+
