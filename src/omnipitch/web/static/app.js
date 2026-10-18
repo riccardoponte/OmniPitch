@@ -239,7 +239,7 @@ class OmniPitchApp {
     this.startStream();
   }
 
-  resetSimulation() {
+  async resetSimulation() {
     this.stopStream();
     this.eventsReceived = 0;
     this.homeScore = 0;
@@ -259,6 +259,13 @@ class OmniPitchApp {
       </div>
     `;
     this.renderPitch();
+
+    try {
+      await fetch(`/api/match/${this.matchId}/reset`, { method: "POST" });
+      await this.fetchMatchCenterOverview();
+    } catch (e) {
+      console.warn("Error resetting match backend session:", e);
+    }
   }
 
   speakCommentary() {
@@ -388,8 +395,8 @@ class OmniPitchApp {
 
     this.renderPitch();
 
-    // Dynamically update match center overview on milestone events
-    if (this.eventsReceived % 4 === 0 || event.event_type === "goal" || event.event_type === "shot") {
+    // Dynamically update match center overview on live stream events
+    if (this.eventsReceived % 2 === 0 || event.event_type === "goal" || event.event_type === "shot") {
       this.fetchMatchCenterOverview();
     }
   }
@@ -727,8 +734,6 @@ class OmniPitchApp {
     if (!canvas || !this.matchCenterData) return;
     const ctx = canvas.getContext("2d");
     const pts = this.matchCenterData.attack_momentum || [];
-    if (!pts.length) return;
-
     const w = canvas.width;
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
@@ -762,6 +767,14 @@ class OmniPitchApp {
     }
 
     ctx.fillText("0", 25, centerY + 3);
+
+    if (!pts.length) {
+      ctx.fillStyle = "#64748b";
+      ctx.font = "600 13px Outfit";
+      ctx.textAlign = "center";
+      ctx.fillText("Awaiting match kickoff — Dynamic momentum curve activates with live match stream", w / 2, centerY - 25);
+      return;
+    }
 
     // Render bars
     const totalSlots = Math.max(pts.length, 45);
@@ -867,17 +880,28 @@ class OmniPitchApp {
       let homeVal = typeof data.home === "number" ? data.home : parseFloat(data.home);
       let awayVal = typeof data.away === "number" ? data.away : parseFloat(data.away);
 
-      if (m.suffix && !m.customVal) {
-        homeDisplay = `${data.home}%`;
-        awayDisplay = `${data.away}%`;
+      if (m.isFloat) {
+        if (typeof data.home === "number") homeDisplay = data.home.toFixed(2);
+        if (typeof data.away === "number") awayDisplay = data.away.toFixed(2);
       }
 
-      const total = (homeVal + awayVal) || 1;
-      const homePct = Math.round((homeVal / total) * 100);
-      const awayPct = 100 - homePct;
+      if (m.suffix && !m.customVal) {
+        homeDisplay = `${typeof data.home === "number" ? data.home.toFixed(1) : data.home}%`;
+        awayDisplay = `${typeof data.away === "number" ? data.away.toFixed(1) : data.away}%`;
+      }
 
-      const isHomeLeader = homeVal > awayVal;
-      const isAwayLeader = awayVal > homeVal;
+      const total = (homeVal + awayVal) || 0;
+      let homePct = 50;
+      let awayPct = 50;
+      let isHomeLeader = false;
+      let isAwayLeader = false;
+
+      if (total > 0 && homeVal !== awayVal) {
+        homePct = Math.round((homeVal / total) * 100);
+        awayPct = 100 - homePct;
+        isHomeLeader = homeVal > awayVal;
+        isAwayLeader = awayVal > homeVal;
+      }
 
       return `
         <div class="h2h-stat-row">
@@ -1080,7 +1104,7 @@ class OmniPitchApp {
     const timeline = this.matchCenterData.timeline || [];
 
     if (!timeline.length) {
-      list.innerHTML = `<div style="text-align: center; color: #64748b; padding: 20px;">No incidents recorded yet. Match in progress.</div>`;
+      list.innerHTML = `<div style="text-align: center; color: #64748b; padding: 20px;">No incidents recorded yet. Awaiting match stream kickoff.</div>`;
       return;
     }
 

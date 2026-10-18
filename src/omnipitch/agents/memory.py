@@ -177,40 +177,47 @@ class MatchBlackboardMemory:
         away_id = away_team.team_id
 
         # 1. Attack Momentum across minutes
-        max_min = max([e.minute for e in self.events_log], default=1)
-        momentum_points = []
-        events_by_minute: Dict[int, List[MatchEvent]] = {}
-        for e in self.events_log:
-            events_by_minute.setdefault(e.minute, []).append(e)
+        if len(self.events_log) == 0:
+            momentum_points = []
+        else:
+            max_min = max([e.minute for e in self.events_log], default=1)
+            momentum_points = []
+            events_by_minute: Dict[int, List[MatchEvent]] = {}
+            for e in self.events_log:
+                events_by_minute.setdefault(e.minute, []).append(e)
 
-        for m in range(1, max_min + 1):
-            min_events = events_by_minute.get(m, [])
-            val = calculate_attack_momentum(min_events, home_id)
-            dominant = "home" if val > 5.0 else ("away" if val < -5.0 else "neutral")
+            for m in range(1, max_min + 1):
+                min_events = events_by_minute.get(m, [])
+                val = calculate_attack_momentum(min_events, home_id)
+                dominant = "home" if val > 5.0 else ("away" if val < -5.0 else "neutral")
 
-            incidents = []
-            for ev in min_events:
-                if ev.event_type == EventType.GOAL:
-                    incidents.append({"type": "goal", "icon": "⚽", "player": ev.player.name if ev.player else "Goal", "team": ev.team_id})
-                elif ev.event_type == EventType.FOUL:
-                    incidents.append({"type": "card", "icon": "🟨", "player": ev.player.name if ev.player else "Foul", "team": ev.team_id})
-                elif ev.event_type == EventType.SHOT and (ev.expected_goals or 0) >= 0.35:
-                    incidents.append({"type": "big_chance", "icon": "⚡", "player": ev.player.name if ev.player else "Chance", "team": ev.team_id})
+                incidents = []
+                for ev in min_events:
+                    if ev.event_type == EventType.GOAL:
+                        incidents.append({"type": "goal", "icon": "⚽", "player": ev.player.name if ev.player else "Goal", "team": ev.team_id})
+                    elif ev.event_type == EventType.FOUL:
+                        incidents.append({"type": "card", "icon": "🟨", "player": ev.player.name if ev.player else "Foul", "team": ev.team_id})
+                    elif ev.event_type == EventType.SHOT and (ev.expected_goals or 0) >= 0.35:
+                        incidents.append({"type": "big_chance", "icon": "⚡", "player": ev.player.name if ev.player else "Chance", "team": ev.team_id})
 
-            momentum_points.append({
-                "minute": m,
-                "value": val,
-                "dominant_team": dominant,
-                "incidents": incidents,
-            })
+                momentum_points.append({
+                    "minute": m,
+                    "value": val,
+                    "dominant_team": dominant,
+                    "incidents": incidents,
+                })
 
         # 2. Team Comparative Statistics
         home_events = [e for e in self.events_log if e.team_id == home_id]
         away_events = [e for e in self.events_log if e.team_id == away_id]
-        total_events_count = max(len(self.events_log), 1)
+        total_events_count = len(self.events_log)
 
-        possession_home = round((len(home_events) / total_events_count) * 100.0, 1)
-        possession_away = round(100.0 - possession_home, 1)
+        if total_events_count == 0:
+            possession_home = 50.0
+            possession_away = 50.0
+        else:
+            possession_home = round((len(home_events) / total_events_count) * 100.0, 1)
+            possession_away = round(100.0 - possession_home, 1)
 
         xg_home = round(sum(e.expected_goals or 0.0 for e in home_events if e.event_type in (EventType.SHOT, EventType.GOAL)), 2)
         xg_away = round(sum(e.expected_goals or 0.0 for e in away_events if e.event_type in (EventType.SHOT, EventType.GOAL)), 2)
@@ -232,27 +239,27 @@ class MatchBlackboardMemory:
         passes_home = [e for e in home_events if e.event_type == EventType.PASS]
         passes_acc_home = len([e for e in passes_home if e.is_successful])
         passes_tot_home = len(passes_home)
-        pass_pct_home = round((passes_acc_home / max(passes_tot_home, 1)) * 100.0, 1)
+        pass_pct_home = round((passes_acc_home / max(passes_tot_home, 1)) * 100.0, 1) if passes_tot_home > 0 else 0.0
 
         passes_away = [e for e in away_events if e.event_type == EventType.PASS]
         passes_acc_away = len([e for e in passes_away if e.is_successful])
         passes_tot_away = len(passes_away)
-        pass_pct_away = round((passes_acc_away / max(passes_tot_away, 1)) * 100.0, 1)
+        pass_pct_away = round((passes_acc_away / max(passes_tot_away, 1)) * 100.0, 1) if passes_tot_away > 0 else 0.0
 
         fouls_home = len([e for e in home_events if e.event_type == EventType.FOUL])
         fouls_away = len([e for e in away_events if e.event_type == EventType.FOUL])
 
         # Synthesize realistic corners from attacking third actions
-        corners_home = max(len([e for e in home_events if e.start_coordinates.x > 85.0 and e.start_coordinates.y in (0, 100)]) // 2, shots_home // 3)
-        corners_away = max(len([e for e in away_events if e.start_coordinates.x < 15.0 and e.start_coordinates.y in (0, 100)]) // 2, shots_away // 3)
+        corners_home = max(len([e for e in home_events if e.start_coordinates.x > 85.0 and e.start_coordinates.y in (0, 100)]) // 2, shots_home // 3) if shots_home > 0 else 0
+        corners_away = max(len([e for e in away_events if e.start_coordinates.x < 15.0 and e.start_coordinates.y in (0, 100)]) // 2, shots_away // 3) if shots_away > 0 else 0
 
         tackles_home = len([e for e in home_events if e.event_type == EventType.TACKLE])
         tackles_won_home = len([e for e in home_events if e.event_type == EventType.TACKLE and e.is_successful])
-        tackles_pct_home = round((tackles_won_home / max(tackles_home, 1)) * 100.0, 1)
+        tackles_pct_home = round((tackles_won_home / max(tackles_home, 1)) * 100.0, 1) if tackles_home > 0 else 0.0
 
         tackles_away = len([e for e in away_events if e.event_type == EventType.TACKLE])
         tackles_won_away = len([e for e in away_events if e.event_type == EventType.TACKLE and e.is_successful])
-        tackles_pct_away = round((tackles_won_away / max(tackles_away, 1)) * 100.0, 1)
+        tackles_pct_away = round((tackles_won_away / max(tackles_away, 1)) * 100.0, 1) if tackles_away > 0 else 0.0
 
         # 3. Lineup Ratings & MVP selection
         def format_lineup(team: Team):
@@ -289,9 +296,9 @@ class MatchBlackboardMemory:
         lineup_home = format_lineup(home_team)
         lineup_away = format_lineup(away_team)
 
-        # Determine MVP
+        # Determine MVP (only crowned once match action begins)
         all_players = lineup_home + lineup_away
-        if all_players:
+        if all_players and len(self.events_log) > 0:
             top_rated = max(all_players, key=lambda x: (x["rating"], x["goals"], x["distance_km"]))
             top_rated["is_mvp"] = True
 

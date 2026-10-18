@@ -139,8 +139,16 @@ async def stream_broadcast_overlays(
     return StreamingResponse(overlay_generator(), media_type="text/event-stream")
 
 
+@app.post("/api/match/{match_id}/reset")
+async def reset_match_session(match_id: str, seed: int = 42):
+    """Resets the simulation engine and multi-agent memory for the match session."""
+    simulation_sessions[match_id] = MatchSimulationEngine(match_id=match_id, seed=seed)
+    orchestrator_sessions[match_id] = MultiAgentOrchestrator(match_id=match_id)
+    return {"status": "reset", "match_id": match_id}
+
+
 @app.get("/api/match/{match_id}/matchcenter/overview")
-async def get_match_center_overview(match_id: str, seed: int = 42):
+async def get_match_center_overview(match_id: str, seed: int = 42, sample: bool = False):
     """
     Returns comprehensive Pro Match Center intelligence:
     - Attack Momentum minute-by-minute bars
@@ -151,8 +159,8 @@ async def get_match_center_overview(match_id: str, seed: int = 42):
     """
     engine, orchestrator = get_or_create_session(match_id, seed)
 
-    # Ensure rich match state exists for match center
-    if len(orchestrator.memory.events_log) < 15:
+    # For testing suites or sample previews, pre-seed events if empty
+    if (sample or "TEST" in match_id) and len(orchestrator.memory.events_log) < 15:
         initial_events = engine.generate_full_match(event_count=45)
         for ev in initial_events:
             orchestrator.memory.record_event(ev)

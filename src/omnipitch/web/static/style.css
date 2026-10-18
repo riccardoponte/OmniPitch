@@ -202,7 +202,7 @@ body {
 /* Controls */
 .header-right {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 16px;
   flex-wrap: wrap;
 }
@@ -210,7 +210,7 @@ body {
 .control-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .control-label {
@@ -218,14 +218,18 @@ body {
   font-weight: 700;
   letter-spacing: 0.6px;
   color: var(--text-muted);
+  line-height: 1;
 }
 
 .segmented-control {
   display: flex;
+  align-items: center;
   background: rgba(0, 0, 0, 0.4);
   padding: 3px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+  height: 38px;
+  box-sizing: border-box;
 }
 
 .seg-btn {
@@ -235,13 +239,16 @@ body {
   font-family: var(--font-main);
   font-weight: 600;
   font-size: 0.8rem;
-  padding: 6px 14px;
+  height: 30px;
+  padding: 0 14px;
   border-radius: 6px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .seg-btn:hover {
@@ -262,11 +269,15 @@ body {
   font-family: var(--font-main);
   font-weight: 600;
   font-size: 0.8rem;
-  padding: 7px 12px;
+  height: 38px;
+  padding: 0 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   outline: none;
   transition: border-color 0.2s;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
 }
 
 .custom-select:hover, .custom-select:focus {
@@ -277,6 +288,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 38px;
+  box-sizing: border-box;
 }
 
 .btn-primary {
@@ -286,14 +299,18 @@ body {
   font-family: var(--font-main);
   font-weight: 700;
   font-size: 0.85rem;
-  padding: 8px 18px;
+  height: 38px;
+  padding: 0 18px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   box-shadow: 0 4px 14px rgba(0, 163, 224, 0.35);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .btn-primary:hover {
@@ -311,10 +328,16 @@ body {
   color: var(--text-secondary);
   font-weight: 700;
   font-size: 0.9rem;
-  padding: 8px 12px;
+  height: 38px;
+  min-width: 38px;
+  padding: 0 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .btn-secondary:hover {

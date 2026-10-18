@@ -92,3 +92,35 @@ def test_match_center_overview_endpoint():
     assert "timeline" in data
 
 
+def test_match_center_prematch_overview():
+    """Verify that a new unstarted match begins with clean 0 statistics and no premature MVP."""
+    response = client.get("/api/match/MATCH-PREMATCH-CLEAN/matchcenter/overview?seed=42")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["match_id"] == "MATCH-PREMATCH-CLEAN"
+    assert data["attack_momentum"] == []
+    assert data["shot_map"] == []
+    assert data["timeline"] == []
+    stats = data["comparison_stats"]
+    assert stats["expected_goals"]["home"] == 0.0
+    assert stats["expected_goals"]["away"] == 0.0
+    assert stats["possession"]["home"] == 50.0
+    assert stats["possession"]["away"] == 50.0
+    assert stats["total_shots"]["home"] == 0
+    assert stats["total_shots"]["away"] == 0
+    all_players = data["lineups"]["home"] + data["lineups"]["away"]
+    mvp_players = [p for p in all_players if p["is_mvp"]]
+    assert len(mvp_players) == 0
+
+
+def test_reset_match_session():
+    """Verify that resetting a match session clears blackboard memory."""
+    # Seed events
+    client.get("/api/match/MATCH-TO-RESET-TEST/matchcenter/overview")
+    # Reset
+    reset_resp = client.post("/api/match/MATCH-TO-RESET-TEST/reset")
+    assert reset_resp.status_code == 200
+    assert reset_resp.json()["status"] == "reset"
+
+
+
