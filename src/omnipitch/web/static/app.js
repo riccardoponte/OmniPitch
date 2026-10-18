@@ -30,6 +30,11 @@ class OmniPitchApp {
     this.latestOverlay = null;
     this.matchCenterData = null;
     this.currentFormation = "4-3-3";
+    this.pitchMode = "telemetry"; // "telemetry" or "formations"
+    this.liveTableRows = [];
+    this.currentDataTableFilter = "all";
+    this.activeModalPlayerName = "";
+    this.activeModalPlayerId = "";
 
     // Tactical formation 4-3-3 coordinates (normalized 0-100)
     this.homeFormation = [
@@ -140,6 +145,17 @@ class OmniPitchApp {
       reportBtn.addEventListener("click", () => this.exportMatchReport());
     }
 
+    // Pitch Mode Toggle button (Tactical XI Formations vs Live Telemetry)
+    const btnPitchMode = document.getElementById("btn-toggle-pitch-mode");
+    if (btnPitchMode) {
+      btnPitchMode.addEventListener("click", () => {
+        this.pitchMode = this.pitchMode === "telemetry" ? "formations" : "telemetry";
+        btnPitchMode.classList.toggle("active", this.pitchMode === "formations");
+        btnPitchMode.textContent = this.pitchMode === "formations" ? "👥 Formations: ON" : "👥 Tactical XI View";
+        this.renderPitch();
+      });
+    }
+
     // Match Center Tabs Switching
     const mcTabs = document.querySelectorAll(".mc-tab-btn");
     mcTabs.forEach((btn) => {
@@ -153,6 +169,7 @@ class OmniPitchApp {
 
         if (targetId === "tab-momentum") this.renderAttackMomentum();
         if (targetId === "tab-shotmap") this.renderShotMap();
+        if (targetId === "tab-datatable") this.fetchLiveDataTable();
       });
     });
 
@@ -173,6 +190,107 @@ class OmniPitchApp {
       shotCanvas.addEventListener("mouseleave", () => {
         const tip = document.getElementById("shotmap-tooltip");
         if (tip) tip.classList.add("hidden");
+      });
+    }
+
+    // Team Standings & Club Profile Triggers
+    const homeTeamTriggers = [
+      document.getElementById("home-team-trigger"),
+      document.getElementById("lineup-home-team-trigger"),
+    ];
+    homeTeamTriggers.forEach((trigger) => {
+      if (trigger) {
+        trigger.addEventListener("click", () => this.openTeamModal("avalon_city"));
+      }
+    });
+
+    const awayTeamTriggers = [
+      document.getElementById("away-team-trigger"),
+      document.getElementById("lineup-away-team-trigger"),
+    ];
+    awayTeamTriggers.forEach((trigger) => {
+      if (trigger) {
+        trigger.addEventListener("click", () => this.openTeamModal("solaria_rovers"));
+      }
+    });
+
+    // Team Modal Close & Tab Switching
+    const btnCloseTeamModal = document.getElementById("btn-close-team-modal");
+    if (btnCloseTeamModal) {
+      btnCloseTeamModal.addEventListener("click", () => this.closeTeamModal());
+    }
+
+    const teamModal = document.getElementById("team-modal");
+    if (teamModal) {
+      teamModal.addEventListener("click", (e) => {
+        if (e.target === teamModal) this.closeTeamModal();
+      });
+    }
+
+    const modalTabBtns = document.querySelectorAll("#team-modal .modal-tab-btn");
+    modalTabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        modalTabBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const targetPaneId = btn.getAttribute("data-modaltab");
+        document.querySelectorAll("#team-modal .modal-tab-pane").forEach((p) => p.classList.remove("active"));
+        const targetPane = document.getElementById(targetPaneId);
+        if (targetPane) targetPane.classList.add("active");
+      });
+    });
+
+    // Player Dossier Modal Close & Spotlight Focus
+    const btnClosePlayerModal = document.getElementById("btn-close-player-modal");
+    if (btnClosePlayerModal) {
+      btnClosePlayerModal.addEventListener("click", () => this.closePlayerModal());
+    }
+
+    const playerModal = document.getElementById("player-modal");
+    if (playerModal) {
+      playerModal.addEventListener("click", (e) => {
+        if (e.target === playerModal) this.closePlayerModal();
+      });
+    }
+
+    const btnSpotlightFromModal = document.getElementById("btn-spotlight-from-modal");
+    if (btnSpotlightFromModal) {
+      btnSpotlightFromModal.addEventListener("click", () => {
+        if (this.activeModalPlayerName) {
+          this.selectSpotlightPlayer(this.activeModalPlayerName);
+          this.closePlayerModal();
+        }
+      });
+    }
+
+    // ESC key closes any open modal
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.closeTeamModal();
+        this.closePlayerModal();
+      }
+    });
+
+    // Live Data Table Filters & Search
+    const dtSearch = document.getElementById("datatable-search");
+    if (dtSearch) {
+      dtSearch.addEventListener("input", () => this.renderLiveDataTable());
+    }
+
+    const dtPills = document.querySelectorAll("#datatable-pills .type-pill");
+    dtPills.forEach((pill) => {
+      pill.addEventListener("click", () => {
+        dtPills.forEach((p) => p.classList.remove("active"));
+        pill.classList.add("active");
+        this.currentDataTableFilter = pill.getAttribute("data-type") || "all";
+        this.renderLiveDataTable();
+      });
+    });
+
+    // CSV Telemetry Export button
+    const btnDownloadCsv = document.getElementById("btn-download-csv");
+    if (btnDownloadCsv) {
+      btnDownloadCsv.addEventListener("click", () => {
+        window.open(`/api/match/${this.matchId}/events/csv`, "_blank");
       });
     }
   }
@@ -369,6 +487,9 @@ class OmniPitchApp {
     // Append to telemetry list
     this.appendTelemetryRow(event, `${mm}:${ss}`);
 
+    // Update Pro Match Center Live Data Table
+    this.prependLiveTableRow(event, `${mm}:${ss}`);
+
     // Update Pitch Ball & Vectors
     this.currentBall = {
       x: event.end_coordinates ? event.end_coordinates.x : event.start_coordinates.x,
@@ -467,6 +588,9 @@ class OmniPitchApp {
     this.ctx.scale(dpr, dpr);
     this.pitchW = rect.width;
     this.pitchH = rect.height;
+
+    this.canvas.addEventListener("click", (e) => this.handlePitchClick(e));
+    this.canvas.addEventListener("mousemove", (e) => this.handlePitchMouseMove(e));
   }
 
   toCanvasCoords(normX, normY) {
@@ -492,6 +616,12 @@ class OmniPitchApp {
     for (let i = 0; i < stripes; i++) {
       ctx.fillStyle = i % 2 === 0 ? "#0d2017" : "#0f261c";
       ctx.fillRect(i * stripeW, 0, stripeW, h);
+    }
+
+    // Branch to full tactical formations head-to-head comparison if toggled
+    if (this.pitchMode === "formations") {
+      this.renderTacticalFormations(ctx, w, h);
+      return;
     }
 
     // 2. Optional Zonal Heatmap Overlay
@@ -931,7 +1061,7 @@ class OmniPitchApp {
         const mvpBadge = p.is_mvp ? `<span class="mvp-badge">⭐ MVP</span>` : "";
 
         return `
-          <div class="player-rating-card" onclick="window.omniPitch.selectSpotlightPlayer('${p.name}')">
+          <div class="player-rating-card" onclick="window.omniPitch.openPlayerModal('${p.player_id || ''}', '${p.name}')" title="Click to view ${p.name}'s Sporting CV & Scouting Dossier" style="cursor: pointer;">
             <div class="player-info-left">
               <span class="player-jersey-badge">${p.number}</span>
               <span class="player-pos-badge">${p.position}</span>
@@ -1124,10 +1254,539 @@ class OmniPitchApp {
       `;
     }).join("");
   }
+
+  /* ==============================================================================
+     Tactical Formations Head-to-Head Visualizer
+     ============================================================================== */
+
+  handlePitchClick(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const allPlayers = [...this.homeFormation, ...this.awayFormation];
+    for (const p of allPlayers) {
+      const pos = this.toCanvasCoords(p.x, p.y);
+      const dist = Math.hypot(clickX - pos.x, clickY - pos.y);
+      if (dist <= 22) {
+        this.openPlayerModal(p.id, p.name);
+        return;
+      }
+    }
+  }
+
+  handlePitchMouseMove(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const allPlayers = [...this.homeFormation, ...this.awayFormation];
+    const hovered = allPlayers.some((p) => {
+      const pos = this.toCanvasCoords(p.x, p.y);
+      return Math.hypot(mx - pos.x, my - pos.y) <= 22;
+    });
+
+    this.canvas.style.cursor = hovered ? "pointer" : "default";
+  }
+
+  renderTacticalFormations(ctx, w, h) {
+    const pad = 24;
+
+    // Pitch Boundary & Lines
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+
+    // Halfway line & center circle
+    const midX = w / 2;
+    ctx.beginPath();
+    ctx.moveTo(midX, pad);
+    ctx.lineTo(midX, h - pad);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(midX, h / 2, 54, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Penalty Boxes
+    const boxW = 80;
+    const boxH = 160;
+    const boxY = (h - boxH) / 2;
+    ctx.strokeRect(pad, boxY, boxW, boxH);
+    ctx.strokeRect(w - pad - boxW, boxY, boxW, boxH);
+
+    // Tactical Unit Connecting Lines (Defenders, Midfielders, Forwards)
+    const drawUnitLines = (players, color) => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+
+      // Group by role
+      const defs = players.filter(p => p.role === "DEF");
+      const mids = players.filter(p => p.role === "MID");
+      const fwds = players.filter(p => p.role === "FWD");
+
+      [defs, mids, fwds].forEach(unit => {
+        if (unit.length > 1) {
+          ctx.beginPath();
+          unit.forEach((p, idx) => {
+            const pos = this.toCanvasCoords(p.x, p.y);
+            if (idx === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+          });
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
+    };
+
+    drawUnitLines(this.homeFormation, "rgba(0, 163, 224, 0.45)");
+    drawUnitLines(this.awayFormation, "rgba(225, 29, 72, 0.45)");
+
+    // Banner watermark
+    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+    ctx.font = "600 11px Outfit";
+    ctx.textAlign = "center";
+    ctx.fillText("TACTICAL HEAD-TO-HEAD FORMATIONS • CLICK ANY PLAYER TO VIEW SPORTING CV & STATS", w / 2, 16);
+
+    // Render Players for both teams
+    const renderFormationXI = (players, kitColor, secondaryColor, teamName) => {
+      players.forEach((p) => {
+        const pos = this.toCanvasCoords(p.x, p.y);
+        const isActive = this.activePlayerNode && this.activePlayerNode.toLowerCase().includes(p.name.toLowerCase());
+        const isTargetSpotlight = this.currentPlayer && p.name.toLowerCase().includes(this.currentPlayer.toLowerCase());
+
+        // Find live rating if available
+        let ratingVal = null;
+        let ratingColor = "orange";
+        if (this.matchCenterData && this.matchCenterData.lineups) {
+          const allLineup = [...(this.matchCenterData.lineups.home || []), ...(this.matchCenterData.lineups.away || [])];
+          const matched = allLineup.find(lp => lp.player_id === p.id || lp.name.toLowerCase() === p.name.toLowerCase());
+          if (matched) {
+            ratingVal = matched.rating;
+            ratingColor = matched.rating_color;
+          }
+        }
+
+        ctx.save();
+
+        // Glowing halo if active or spotlight target
+        if (isActive || isTargetSpotlight) {
+          ctx.strokeStyle = "#00f2fe";
+          ctx.lineWidth = 3;
+          ctx.shadowColor = "#00f2fe";
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Tactical node body
+        ctx.fillStyle = kitColor;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 13, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Jersey number
+        ctx.fillStyle = secondaryColor;
+        ctx.font = "bold 10px Outfit";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(p.num, pos.x, pos.y);
+
+        // Role badge above
+        ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+        ctx.fillRect(pos.x - 12, pos.y - 25, 24, 10);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "bold 7px JetBrains Mono";
+        ctx.fillText(p.role, pos.x, pos.y - 20);
+
+        // Name plate below
+        const surname = p.name.split(" ").slice(-1)[0];
+        ctx.font = "600 9px Outfit";
+        const nameWidth = ctx.measureText(surname).width;
+        ctx.fillStyle = "rgba(8, 14, 25, 0.85)";
+        ctx.fillRect(pos.x - nameWidth / 2 - 4, pos.y + 16, nameWidth + 8, 13);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pos.x - nameWidth / 2 - 4, pos.y + 16, nameWidth + 8, 13);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(surname, pos.x, pos.y + 22.5);
+
+        // Dynamic Rating Pill next to name if available
+        if (ratingVal !== null) {
+          const pillColor = ratingColor === "green" ? "#10b981" : (ratingColor === "red" ? "#ef4444" : "#f59e0b");
+          ctx.fillStyle = pillColor;
+          ctx.fillRect(pos.x + nameWidth / 2 + 6, pos.y + 16, 18, 13);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 8px JetBrains Mono";
+          ctx.fillText(ratingVal.toFixed(1), pos.x + nameWidth / 2 + 15, pos.y + 22.5);
+        }
+
+        ctx.restore();
+      });
+    };
+
+    renderFormationXI(this.homeFormation, "#00A3E0", "#ffffff", "Avalon City FC");
+    renderFormationXI(this.awayFormation, "#e11d48", "#FFD100", "Solaria Rovers");
+  }
+
+  /* ==============================================================================
+     Team Standings & Club Intelligence Modal
+     ============================================================================== */
+
+  async openTeamModal(teamId) {
+    this.currentModalTeamId = teamId || "avalon_city";
+    const modal = document.getElementById("team-modal");
+    if (!modal) return;
+
+    try {
+      const [standingsRes, teamRes] = await Promise.all([
+        fetch("/api/league/standings"),
+        fetch(`/api/teams/${this.currentModalTeamId}`),
+      ]);
+
+      if (!standingsRes.ok || !teamRes.ok) return;
+
+      const standings = await standingsRes.json();
+      const team = await teamRes.json();
+
+      // Populate Header
+      document.getElementById("modal-team-name").textContent = team.name;
+      document.getElementById("modal-team-meta").textContent = `${team.stadium} (${team.capacity.toLocaleString()} seats) • Founded ${team.founded}`;
+      const colorBox = document.getElementById("modal-team-color-box");
+      if (colorBox) {
+        colorBox.style.background = this.currentModalTeamId === "avalon_city" ? "#00A3E0" : "#e11d48";
+      }
+
+      // Populate Standings Table
+      const tbody = document.getElementById("standings-tbody");
+      if (tbody) {
+        tbody.innerHTML = standings.map((club) => {
+          const isSelected = club.team_id === this.currentModalTeamId;
+          const isMatch = club.team_id === "avalon_city" || club.team_id === "solaria_rovers";
+          const formDots = (club.form || []).map((f) => {
+            const cls = f === "W" ? "form-w" : (f === "D" ? "form-d" : "form-l");
+            return `<span class="form-dot ${cls}">${f}</span>`;
+          }).join("");
+
+          return `
+            <tr class="${isMatch ? 'current-match-team' : ''}" style="${isSelected ? 'background: rgba(0, 242, 254, 0.16);' : ''}">
+              <td><b>${club.rank}</b></td>
+              <td style="font-weight: 700; cursor: pointer; color: ${isSelected ? '#00f2fe' : '#ffffff'};" onclick="window.omniPitch.openTeamModal('${club.team_id}')" title="Inspect club profile">
+                ${club.team_name}
+              </td>
+              <td>${club.played}</td>
+              <td>${club.won}</td>
+              <td>${club.drawn}</td>
+              <td>${club.lost}</td>
+              <td>${club.goals_for}</td>
+              <td>${club.goals_against}</td>
+              <td>${club.goal_diff > 0 ? '+' : ''}${club.goal_diff}</td>
+              <td style="font-weight: 800; color: #00f2fe;">${club.points}</td>
+              <td><div class="form-badge-group">${formDots}</div></td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      // Populate Club Profile
+      const profContainer = document.getElementById("team-profile-content");
+      if (profContainer) {
+        const recentRows = (team.recent_matches || []).map((m) => {
+          const resClass = m.result === "W" ? "form-w" : (m.result === "D" ? "form-d" : "form-l");
+          return `
+            <div class="stat-metric-row">
+              <span class="metric-lbl">vs ${m.opponent} (${m.competition})</span>
+              <span class="metric-val"><span class="form-dot ${resClass}">${m.result}</span> ${m.score}</span>
+            </div>
+          `;
+        }).join("");
+
+        profContainer.innerHTML = `
+          <div class="profile-card-block">
+            <h4>Tactical DNA & Philosophy</h4>
+            <div class="stat-metric-row"><span class="metric-lbl">Head Coach / Manager:</span><span class="metric-val">${team.manager}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Team Captain:</span><span class="metric-val">${team.captain}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Tactical System:</span><span class="metric-val" style="color: #00f2fe;">${team.tactical_style}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Preferred Formation:</span><span class="metric-val">${team.preferred_formation}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">PPDA Pressing Index:</span><span class="metric-val">${team.ppda} (Suffocating Press)</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Home Stadium:</span><span class="metric-val">${team.stadium}</span></div>
+          </div>
+          <div class="profile-card-block">
+            <h4>Recent Results & Form Guide</h4>
+            ${recentRows}
+          </div>
+        `;
+      }
+
+      modal.classList.remove("hidden");
+    } catch (err) {
+      console.warn("Failed to load team standings/profile:", err);
+    }
+  }
+
+  closeTeamModal() {
+    const modal = document.getElementById("team-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  /* ==============================================================================
+     Player Dossier, Sporting CV & Career Statistics Modal
+     ============================================================================== */
+
+  async openPlayerModal(playerId, playerName) {
+    const modal = document.getElementById("player-modal");
+    if (!modal) return;
+
+    try {
+      const query = playerId || playerName;
+      const res = await fetch(`/api/players/${encodeURIComponent(query)}?match_id=${this.matchId}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      this.activeModalPlayerId = data.player_id;
+      this.activeModalPlayerName = data.name;
+
+      // Header Identity
+      document.getElementById("modal-player-num").textContent = `#${data.number}`;
+      document.getElementById("modal-player-pos").textContent = data.position;
+      document.getElementById("modal-player-team").textContent = data.club_name;
+      document.getElementById("modal-player-name").textContent = data.name;
+      document.getElementById("modal-player-archetype").textContent = data.archetype;
+
+      // Bio Ribbon
+      document.getElementById("bio-age").textContent = data.bio.age;
+      document.getElementById("bio-nat").textContent = data.bio.nationality;
+      document.getElementById("bio-height").textContent = `${data.bio.height_cm} cm`;
+      document.getElementById("bio-foot").textContent = data.bio.preferred_foot;
+      document.getElementById("bio-val").textContent = data.bio.market_value_eur;
+      document.getElementById("bio-contract").textContent = data.bio.contract_until;
+
+      // Sporting CV & Career
+      document.getElementById("cv-academy").textContent = data.career.youth_academy;
+      document.getElementById("cv-caps").textContent = data.career.international_caps;
+
+      const clubsList = document.getElementById("cv-clubs-list");
+      if (clubsList) {
+        clubsList.innerHTML = (data.career.trajectory || []).map((c) => `
+          <div class="club-trajectory-row">
+            <span><b>${c.period}</b>: ${c.club}</span>
+            <span style="color: #94a3b8;">${c.appearances} apps (${c.goals} goals)</span>
+          </div>
+        `).join("");
+      }
+
+      const honorsList = document.getElementById("cv-honors-list");
+      if (honorsList) {
+        honorsList.innerHTML = (data.career.honours || []).map((h) => `
+          <span class="honor-tag">${h}</span>
+        `).join("");
+      }
+
+      document.getElementById("cv-scouting-text").textContent = data.scouting_summary;
+
+      // Live Match Contribution
+      const live = data.live_match_stats || {};
+      const ratingCls = live.rating_color === "green" ? "rating-green" : (live.rating_color === "red" ? "rating-red" : "rating-orange");
+      const liveContainer = document.getElementById("modal-live-metrics");
+      if (liveContainer) {
+        liveContainer.innerHTML = `
+          <div class="metric-card-mini">
+            <span class="num"><span class="pro-rating-pill ${ratingCls}">${(live.rating || 6.5).toFixed(1)}</span></span>
+            <span class="lbl">Live Rating</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num" style="color: #00f2fe;">${live.distance_km || 0.0} km</span>
+            <span class="lbl">Distance Covered</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num" style="color: #f59e0b;">${live.sprint_bursts || 0}</span>
+            <span class="lbl">Sprint Bursts</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num">${live.pass_accuracy || 0}%</span>
+            <span class="lbl">Pass Acc (${live.completed_passes || 0}/${live.total_passes || 0})</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num" style="color: #10b981;">${live.goals || 0} G / ${live.total_shots || 0} S</span>
+            <span class="lbl">Goals / Shots</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num">${live.tackles_won || 0}</span>
+            <span class="lbl">Tackles Won</span>
+          </div>
+        `;
+      }
+
+      // Season 2025/26 Longitudinal Metrics
+      const s = data.season_2025_26 || {};
+      const seasonContainer = document.getElementById("modal-season-metrics");
+      if (seasonContainer) {
+        seasonContainer.innerHTML = `
+          <div class="metric-card-mini">
+            <span class="num">${s.appearances || 0}</span>
+            <span class="lbl">Season Appearances</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num" style="color: #10b981;">${s.goals || 0} G / ${s.assists || 0} A</span>
+            <span class="lbl">Goals & Assists</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num" style="color: #00f2fe;">${(s.xg_per_90 || 0).toFixed(2)}</span>
+            <span class="lbl">xG / 90 Minutes</span>
+          </div>
+          <div class="metric-card-mini">
+            <span class="num">${s.pass_completion_rate || 0}%</span>
+            <span class="lbl">Pass Completion</span>
+          </div>
+          <div class="metric-card-mini" style="grid-column: span 2;">
+            <span class="num" style="color: #f59e0b;">${s.top_speed_kmh || 0} km/h</span>
+            <span class="lbl">Peak Sprint Velocity Recorded</span>
+          </div>
+        `;
+      }
+
+      modal.classList.remove("hidden");
+    } catch (err) {
+      console.warn("Failed to load player dossier:", err);
+    }
+  }
+
+  closePlayerModal() {
+    const modal = document.getElementById("player-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  /* ==============================================================================
+     Live Data Table (Microsoft Fabric OneLake Telemetry Stream)
+     ============================================================================== */
+
+  async fetchLiveDataTable() {
+    try {
+      const res = await fetch(`/api/match/${this.matchId}/events/table`);
+      if (!res.ok) return;
+      const data = await res.json();
+      this.liveTableRows = data.rows || [];
+      const badge = document.getElementById("datatable-count-badge");
+      if (badge) badge.textContent = `${this.liveTableRows.length} Ingested Records`;
+      this.renderLiveDataTable();
+    } catch (err) {
+      console.warn("Failed to fetch live data table:", err);
+    }
+  }
+
+  prependLiveTableRow(event, timecode) {
+    const row = {
+      event_id: event.event_id,
+      match_time: timecode,
+      minute: event.minute,
+      second: event.second,
+      team_id: event.team_id,
+      team_name: event.team_id === "avalon_city" ? "Avalon City FC" : "Solaria Rovers",
+      player_id: event.player ? event.player.player_id : "N/A",
+      player_name: event.player ? event.player.name : "System",
+      player_number: event.player ? event.player.number : 0,
+      event_type: event.event_type,
+      start_x: event.start_coordinates ? event.start_coordinates.x.toFixed(1) : "0.0",
+      start_y: event.start_coordinates ? event.start_coordinates.y.toFixed(1) : "0.0",
+      expected_goals: (event.expected_goals || 0.0).toFixed(3),
+      pass_difficulty: (event.pass_difficulty_rating || 0.0).toFixed(2),
+      shot_speed_kmh: (event.shot_speed_kmh || 0.0).toFixed(1),
+      is_successful: Boolean(event.is_successful),
+      is_sprint: Boolean(event.is_sprint_burst),
+      fabric_verified: true,
+    };
+
+    this.liveTableRows.unshift(row);
+    if (this.liveTableRows.length > 200) this.liveTableRows.pop();
+
+    const badge = document.getElementById("datatable-count-badge");
+    if (badge) badge.textContent = `${this.liveTableRows.length} Ingested Records`;
+
+    // Re-render if table tab is currently visible
+    const activeTab = document.querySelector(".mc-tab-btn.active");
+    if (activeTab && activeTab.getAttribute("data-tab") === "tab-datatable") {
+      this.renderLiveDataTable();
+    }
+  }
+
+  renderLiveDataTable() {
+    const tbody = document.getElementById("live-events-tbody");
+    if (!tbody) return;
+
+    const searchInput = document.getElementById("datatable-search");
+    const query = (searchInput ? searchInput.value : "").toLowerCase().trim();
+
+    const filtered = this.liveTableRows.filter((r) => {
+      // Type pill filter
+      if (this.currentDataTableFilter !== "all") {
+        if (this.currentDataTableFilter === "shot") {
+          if (r.event_type !== "shot" && r.event_type !== "goal") return false;
+        } else if (r.event_type !== this.currentDataTableFilter) {
+          return false;
+        }
+      }
+
+      // Text search filter
+      if (query) {
+        const matchesPlayer = (r.player_name || "").toLowerCase().includes(query);
+        const matchesTeam = (r.team_name || "").toLowerCase().includes(query);
+        const matchesType = (r.event_type || "").toLowerCase().includes(query);
+        const matchesId = (r.event_id || "").toLowerCase().includes(query);
+        if (!matchesPlayer && !matchesTeam && !matchesType && !matchesId) return false;
+      }
+
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" style="text-align: center; color: #64748b; padding: 28px;">
+            ${this.liveTableRows.length === 0 ? 'Awaiting telemetry ingest. Start match stream above or inspect simulated dataset.' : 'No events match the active search or type filter.'}
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = filtered.slice(0, 50).map((r) => {
+      const isHome = r.team_id === "avalon_city";
+      const teamColor = isHome ? "#00A3E0" : "#e11d48";
+      const typeBadgeClass = `tele-badge tele-badge-${r.event_type.replace('_', '')}`;
+      const xgHighlight = parseFloat(r.expected_goals) > 0.15 ? 'color: #ec4899; font-weight: 800;' : '';
+
+      return `
+        <tr>
+          <td><span class="mono">${r.match_time}</span></td>
+          <td style="color: ${teamColor}; font-weight: 600; cursor: pointer;" onclick="window.omniPitch.openTeamModal('${r.team_id}')" title="Inspect ${r.team_name}">
+            ${r.team_name}
+          </td>
+          <td style="cursor: pointer; font-weight: 600;" onclick="window.omniPitch.openPlayerModal('${r.player_id}', '${r.player_name}')" title="Open ${r.player_name}'s sporting CV">
+            ⭐ ${r.player_name} <span style="color: #64748b;">(#${r.player_number})</span>
+          </td>
+          <td><span class="${typeBadgeClass}">${r.event_type}</span></td>
+          <td><span class="mono">(${r.start_x}, ${r.start_y})</span></td>
+          <td><span class="mono" style="${xgHighlight}">${r.expected_goals}</span></td>
+          <td><span class="mono">${r.pass_difficulty}</span></td>
+          <td><span class="mono">${r.shot_speed_kmh} km/h</span></td>
+          <td><span class="fabric-badge">✓ OneLake Delta</span></td>
+        </tr>
+      `;
+    }).join("");
+  }
 }
 
-// Instantiate on DOMContentLoaded
+// Global initialization & public API exposure
 window.addEventListener("DOMContentLoaded", () => {
   window.omniPitch = new OmniPitchApp();
 });
+
 

@@ -123,4 +123,52 @@ def test_reset_match_session():
     assert reset_resp.json()["status"] == "reset"
 
 
+def test_league_standings_endpoint():
+    response = client.get("/api/league/standings")
+    assert response.status_code == 200
+    data = response.json()
+    assert "standings" in data
+    assert len(data["standings"]) == 10
+    assert data["standings"][0]["team_id"] == "avalon_city"
+    assert data["standings"][1]["team_id"] == "solaria_rovers"
+
+
+def test_team_profile_endpoint():
+    response = client.get("/api/teams/avalon_city")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Avalon City FC"
+    assert "stadium" in data
+    assert "tactical_system" in data
+    assert "season_stats" in data
+
+
+def test_player_dossier_endpoint():
+    response = client.get("/api/players/AVA-08")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Julian Drake"
+    assert data["number"] == 8
+    assert "cv_highlights" in data
+    assert "season_2025_stats" in data
+    assert "live_match_stats" in data
+
+
+def test_events_table_endpoint():
+    response = client.get("/api/match/MATCH-TABLE-TEST/events/table")
+    assert response.status_code == 200
+    data = response.json()
+    assert "rows" in data
+    assert "columns" in data
+    assert len(data["rows"]) > 0
+
+
+def test_events_csv_endpoint():
+    response = client.get("/api/match/MATCH-CSV-TEST/events/csv")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers["content-type"]
+    assert "EventID,MatchID" in response.text
+
+
+
 

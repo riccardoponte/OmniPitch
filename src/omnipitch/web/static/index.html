@@ -30,16 +30,18 @@
 
       <!-- Match Scoreboard -->
       <div class="scoreboard-card" id="scoreboard">
-        <div class="team-side home">
+        <div class="team-side home clickable-team" id="home-team-trigger" title="Click to view Avalon City FC standings & club profile">
           <span class="team-color-dot home-dot"></span>
           <span class="team-name" id="home-name">Avalon City FC</span>
+          <span class="team-rank-badge">#1</span>
         </div>
         <div class="score-display">
           <span class="score-digit" id="home-score">0</span>
           <span class="score-divider">-</span>
           <span class="score-digit" id="away-score">0</span>
         </div>
-        <div class="team-side away">
+        <div class="team-side away clickable-team" id="away-team-trigger" title="Click to view Solaria Rovers standings & club profile">
+          <span class="team-rank-badge">#2</span>
           <span class="team-name" id="away-name">Solaria Rovers</span>
           <span class="team-color-dot away-dot"></span>
         </div>
@@ -172,6 +174,7 @@
             <span class="badge-subtle" id="pitch-status">Aethelgard Arena &bull; Clear 16°C</span>
           </div>
           <div class="pitch-legend">
+            <button id="btn-toggle-pitch-mode" class="btn-pitch-mode" title="Switch between real-time ball/pass tracking and complete head-to-head tactical formations">⚔️ Tactical XI View</button>
             <button id="btn-toggle-heatmap" class="btn-heatmap">🔥 Zonal Heatmap: OFF</button>
             <span class="legend-item"><span class="dot-home"></span> Avalon City</span>
             <span class="legend-item"><span class="dot-away"></span> Solaria</span>
@@ -348,6 +351,7 @@
             <button class="mc-tab-btn" data-tab="tab-lineups" id="btn-tab-lineups">👥 Ratings & Lineups</button>
             <button class="mc-tab-btn" data-tab="tab-shotmap" id="btn-tab-shotmap">🎯 Shot Map</button>
             <button class="mc-tab-btn" data-tab="tab-timeline" id="btn-tab-timeline">⏱️ Incident Timeline</button>
+            <button class="mc-tab-btn" data-tab="tab-datatable" id="btn-tab-datatable">📑 Live Data Table</button>
           </div>
           <button id="btn-export-match-report" class="btn-inspect-json" title="Download JSON match analytics dossier">📥 Export Match Report</button>
         </div>
@@ -384,10 +388,11 @@
         <div class="lineups-rating-grid">
           <!-- Home Lineup -->
           <div class="team-lineup-column" id="home-lineup-column">
-            <div class="team-lineup-header">
+            <div class="team-lineup-header clickable-team" id="lineup-home-team-trigger" title="Click to view Avalon City FC standings & club profile">
               <div class="team-dot home-dot"></div>
               <h3 id="lineup-home-team-name">Avalon City FC</h3>
               <span class="lineup-formation" id="lineup-home-formation-badge">4-3-3</span>
+              <span class="team-rank-badge">#1</span>
             </div>
             <div class="player-rating-list" id="home-player-ratings">
               <!-- Populated dynamically -->
@@ -396,10 +401,11 @@
 
           <!-- Away Lineup -->
           <div class="team-lineup-column" id="away-lineup-column">
-            <div class="team-lineup-header">
+            <div class="team-lineup-header clickable-team" id="lineup-away-team-trigger" title="Click to view Solaria Rovers standings & club profile">
               <div class="team-dot away-dot"></div>
               <h3 id="lineup-away-team-name">Solaria Rovers</h3>
               <span class="lineup-formation">4-3-3</span>
+              <span class="team-rank-badge">#2</span>
             </div>
             <div class="player-rating-list" id="away-player-ratings">
               <!-- Populated dynamically -->
@@ -435,8 +441,199 @@
           <!-- Populated dynamically -->
         </div>
       </div>
+
+      <!-- Tab 6: Live Data Table (Microsoft Fabric OneLake Telemetry Stream) -->
+      <div class="mc-tab-content" id="tab-datatable">
+        <div class="datatable-card">
+          <div class="datatable-toolbar">
+            <div class="datatable-filters">
+              <input type="text" id="datatable-search" class="datatable-search-input" placeholder="🔍 Search player, event, or team..." />
+              <div class="datatable-type-pills" id="datatable-pills">
+                <button class="type-pill active" data-type="all">All Events</button>
+                <button class="type-pill" data-type="pass">Passes</button>
+                <button class="type-pill" data-type="shot">Shots & Goals</button>
+                <button class="type-pill" data-type="tackle">Tackles</button>
+                <button class="type-pill" data-type="foul">Fouls</button>
+              </div>
+            </div>
+            <div class="datatable-actions">
+              <span class="datatable-counter" id="datatable-count-badge">0 Ingested Records</span>
+              <button id="btn-download-csv" class="btn-inspect-json" title="Download raw tabular events as CSV for Microsoft Fabric OneLake">📥 Export CSV (Fabric)</button>
+            </div>
+          </div>
+          <div class="datatable-scroll-wrapper">
+            <table class="live-events-table" id="live-events-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Team</th>
+                  <th>Player</th>
+                  <th>Action</th>
+                  <th>Coordinates (X, Y)</th>
+                  <th>xG</th>
+                  <th>Pass Diff</th>
+                  <th>Speed</th>
+                  <th>Audit Grounding</th>
+                </tr>
+              </thead>
+              <tbody id="live-events-tbody">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
 
+  </div>
+
+  <!-- ==============================================================================
+       Modal: Team Standing & Club Intelligence
+       ============================================================================== -->
+  <div id="team-modal" class="modal-backdrop hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="modal-team-identity">
+          <div class="modal-team-badge" id="modal-team-color-box"></div>
+          <div>
+            <h2 id="modal-team-name">Avalon City FC</h2>
+            <span class="modal-team-meta" id="modal-team-meta">Aethelgard Arena &bull; Founded 1904</span>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btn-close-team-modal">&times;</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab-btn active" data-modaltab="team-tab-standings">🏆 Championship Standings</button>
+        <button class="modal-tab-btn" data-modaltab="team-tab-profile">📋 Club Analytics & Form</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Standings View -->
+        <div class="modal-tab-pane active" id="team-tab-standings">
+          <div class="standings-table-wrap">
+            <table class="standings-table">
+              <thead>
+                <tr>
+                  <th>Pos</th>
+                  <th>Club</th>
+                  <th>P</th>
+                  <th>W</th>
+                  <th>D</th>
+                  <th>L</th>
+                  <th>GF</th>
+                  <th>GA</th>
+                  <th>GD</th>
+                  <th>PTS</th>
+                  <th>Form</th>
+                </tr>
+              </thead>
+              <tbody id="standings-tbody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+          <div class="standings-zones-legend">
+            <span><span class="zone-dot cl-dot"></span> Championship / Continental Elite (1-4)</span>
+            <span><span class="zone-dot el-dot"></span> Europa Stage (5)</span>
+            <span><span class="zone-dot rel-dot"></span> Relegation Battle (9-10)</span>
+          </div>
+        </div>
+
+        <!-- Club Profile View -->
+        <div class="modal-tab-pane" id="team-tab-profile">
+          <div class="team-profile-grid" id="team-profile-content">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==============================================================================
+       Modal: Player Dossier, Sporting CV & Career Statistics
+       ============================================================================== -->
+  <div id="player-modal" class="modal-backdrop hidden">
+    <div class="modal-card glass-panel modal-card-large">
+      <div class="modal-header">
+        <div class="modal-player-identity">
+          <div class="modal-player-jersey" id="modal-player-num">#8</div>
+          <div>
+            <div class="modal-player-topline">
+              <span class="modal-badge-role" id="modal-player-pos">MID</span>
+              <span class="modal-player-team" id="modal-player-team">Avalon City FC</span>
+            </div>
+            <h2 id="modal-player-name">Julian Drake</h2>
+            <span class="modal-player-archetype" id="modal-player-archetype">World-Class Box-to-Box Playmaker & Metronome</span>
+          </div>
+        </div>
+        <div class="modal-header-actions">
+          <button id="btn-spotlight-from-modal" class="btn-primary" style="font-size:0.8rem; padding: 7px 16px;">⭐ Focus Spotlight</button>
+          <button class="modal-close-btn" id="btn-close-player-modal">&times;</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Bio Summary Ribbon -->
+        <div class="player-bio-ribbon">
+          <div class="bio-pill"><span class="lbl">Age</span><span class="val" id="bio-age">26</span></div>
+          <div class="bio-pill"><span class="lbl">Nationality</span><span class="val" id="bio-nat">England 🏴󠁧󠁢󠁥󠁮󠁧󠁿</span></div>
+          <div class="bio-pill"><span class="lbl">Height</span><span class="val" id="bio-height">184 cm</span></div>
+          <div class="bio-pill"><span class="lbl">Preferred Foot</span><span class="val" id="bio-foot">Right</span></div>
+          <div class="bio-pill"><span class="lbl">Market Valuation</span><span class="val" style="color: #10b981;" id="bio-val">€85.0M</span></div>
+          <div class="bio-pill"><span class="lbl">Contract Until</span><span class="val" id="bio-contract">June 2030</span></div>
+        </div>
+
+        <div class="player-dossier-layout">
+          <!-- Left Column: Sporting CV, Career Trajectory, Palmarès -->
+          <div class="dossier-col">
+            <div class="dossier-block">
+              <h3>📜 Sporting CV & Career Highlights</h3>
+              <div class="cv-info-row">
+                <span class="cv-label">Youth Academy:</span>
+                <span class="cv-value" id="cv-academy">Avalon City Youth Academy (2011-2017)</span>
+              </div>
+              <div class="cv-info-row">
+                <span class="cv-label">Senior International:</span>
+                <span class="cv-value" id="cv-caps">42 Caps (8 Goals)</span>
+              </div>
+              
+              <div class="cv-sub-section">
+                <h4>Previous Club Trajectory</h4>
+                <div id="cv-clubs-list" class="cv-clubs-list"></div>
+              </div>
+
+              <div class="cv-sub-section">
+                <h4>Palmarès & Honors</h4>
+                <div id="cv-honors-list" class="honors-tags"></div>
+              </div>
+
+              <div class="cv-sub-section">
+                <h4>Tactical Scouting Report</h4>
+                <p id="cv-scouting-text" class="scouting-text"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Live Match Performance & Season Statistics -->
+          <div class="dossier-col">
+            <div class="dossier-block">
+              <h3>⚡ Live Match Contribution (Today)</h3>
+              <div class="live-match-grid" id="modal-live-metrics">
+                <!-- Live rating, km, passes, shots, tackles -->
+              </div>
+            </div>
+
+            <div class="dossier-block" style="margin-top: 14px;">
+              <h3>📊 Season 2025/26 Longitudinal Metrics</h3>
+              <div class="season-stats-grid" id="modal-season-metrics">
+                <!-- Goals, Assists, xG/90, Pass Acc, Top Speed -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
