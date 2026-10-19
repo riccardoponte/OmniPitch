@@ -2328,5 +2328,413 @@ body {
   text-transform: uppercase;
 }
 
+/* ==============================================================================
+   Microsoft AI Foundry Multi-Agent Hub & Power Automate Styles
+   ============================================================================== */
+
+.foundry-hub-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.foundry-header-wrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  background: rgba(8, 14, 25, 0.7);
+  border: 1px solid rgba(0, 242, 254, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  flex-wrap: wrap;
+}
+
+.foundry-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(0, 163, 224, 0.25), rgba(0, 242, 254, 0.15));
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.foundry-title-group h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.foundry-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  max-width: 650px;
+  line-height: 1.5;
+}
+
+.foundry-eval-ribbon {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.eval-stat-pill {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 100px;
+}
+
+.eval-stat-pill .eval-num {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.eval-stat-pill .eval-lbl {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.section-sub-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-cyan);
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* 5 Agents Pipeline Grid */
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.agent-pipeline-card {
+  background: rgba(14, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.agent-pipeline-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 242, 254, 0.35);
+}
+
+.agent-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.agent-model-pill {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-cyan);
+}
+
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+.agent-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.agent-role-pill {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.agent-tools-list {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.agent-handoff-flow {
+  font-size: 0.68rem;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+}
+
+/* Power Automate Section */
+.power-automate-section {
+  background: rgba(8, 14, 25, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.pa-pill {
+  display: inline-block;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.pa-title-wrap h4 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.pa-title-wrap p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.pa-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pa-webhook-input-wrap {
+  width: 100%;
+}
+
+.pa-status-box {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: #10b981;
+}
+
+.pa-status-box.hidden {
+  display: none;
+}
+
+/* Adaptive Card Visualizer Container */
+.adaptive-card-preview-container {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 18px;
+}
+
+@media (max-width: 900px) {
+  .adaptive-card-preview-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Authentic Microsoft Teams Dark Mode Card Rendering */
+.ac-teams-chrome {
+  background: #1f1f1f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.ac-teams-header {
+  background: #2b2b2b;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+}
+
+.teams-channel-name {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.teams-timestamp {
+  color: #8a8886;
+  font-size: 0.72rem;
+  margin-left: auto;
+}
+
+.ac-teams-card-body {
+  padding: 16px;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ac-card-banner {
+  background: rgba(16, 185, 129, 0.15);
+  border-left: 4px solid #10b981;
+  padding: 8px 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #10b981;
+}
+
+.ac-card-banner.warning {
+  background: rgba(245, 158, 11, 0.15);
+  border-left-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.ac-card-banner.attention {
+  background: rgba(239, 68, 68, 0.15);
+  border-left-color: #ef4444;
+  color: #ef4444;
+}
+
+.ac-match-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ac-scorer-headline {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.ac-score-badge {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #00f2fe;
+}
+
+.ac-fact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.ac-fact-table td {
+  padding: 4px 0;
+}
+
+.ac-fact-title {
+  color: #8a8886;
+  width: 45%;
+}
+
+.ac-fact-value {
+  color: #ffffff;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.ac-narrative-text {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #e1dfdd;
+}
+
+.ac-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ac-action-btn {
+  background: #333333;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.ac-action-btn:hover {
+  background: #444444;
+  border-color: #00f2fe;
+}
+
+/* JSON Viewer in Tab 7 */
+.ac-json-wrapper {
+  background: #04070d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+}
+
+.ac-json-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ac-json-pre {
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #38bdf8;
+  margin: 0;
+  flex: 1;
+}
+
+
 
 

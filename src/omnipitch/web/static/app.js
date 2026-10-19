@@ -170,6 +170,7 @@ class OmniPitchApp {
         if (targetId === "tab-momentum") this.renderAttackMomentum();
         if (targetId === "tab-shotmap") this.renderShotMap();
         if (targetId === "tab-datatable") this.fetchLiveDataTable();
+        if (targetId === "tab-foundry") this.fetchFoundryHubData();
       });
     });
 
@@ -291,6 +292,29 @@ class OmniPitchApp {
     if (btnDownloadCsv) {
       btnDownloadCsv.addEventListener("click", () => {
         window.open(`/api/match/${this.matchId}/events/csv`, "_blank");
+      });
+    }
+
+    // Tab 7: Power Automate & Adaptive Card Controls
+    const btnDispatchPa = document.getElementById("btn-dispatch-pa");
+    if (btnDispatchPa) {
+      btnDispatchPa.addEventListener("click", () => this.dispatchPowerAutomateWorkflow());
+    }
+
+    const paEventSelect = document.getElementById("pa-event-type-select");
+    if (paEventSelect) {
+      paEventSelect.addEventListener("change", () => this.updateAdaptiveCardPreview());
+    }
+
+    const btnCopyCardJson = document.getElementById("btn-copy-card-json");
+    if (btnCopyCardJson) {
+      btnCopyCardJson.addEventListener("click", () => {
+        const code = document.getElementById("ac-json-code");
+        if (code && navigator.clipboard) {
+          navigator.clipboard.writeText(code.textContent);
+          btnCopyCardJson.textContent = "✓ Copied!";
+          setTimeout(() => (btnCopyCardJson.textContent = "📋 Copy JSON"), 2000);
+        }
       });
     }
   }
@@ -1782,11 +1806,166 @@ class OmniPitchApp {
       `;
     }).join("");
   }
+
+  /* ==============================================================================
+     Microsoft AI Foundry Multi-Agent Hub & Power Automate Workflows
+     ============================================================================== */
+
+  async fetchFoundryHubData() {
+    try {
+      const [agentsRes, previewRes] = await Promise.all([
+        fetch("/api/foundry/agents"),
+        fetch("/api/integrations/power-automate/preview"),
+      ]);
+
+      if (agentsRes.ok) {
+        this.foundryAgentsData = await agentsRes.json();
+        this.renderFoundryAgents(this.foundryAgentsData.agents || []);
+      }
+
+      if (previewRes.ok) {
+        this.adaptiveCardsPreview = await previewRes.json();
+        this.updateAdaptiveCardPreview();
+      }
+    } catch (err) {
+      console.warn("Failed to fetch Foundry hub data:", err);
+    }
+  }
+
+  renderFoundryAgents(agents) {
+    const grid = document.getElementById("foundry-agents-grid");
+    if (!grid) return;
+
+    grid.innerHTML = agents.map((agent) => {
+      const toolsText = agent.tools ? agent.tools.map(t => t.replace(/_/g, " ")).slice(0, 2).join(", ") : "Blackboard Memory";
+      const handoffTarget = agent.handoff_to ? agent.handoff_to.replace(/_/g, " ") : "Client";
+
+      return `
+        <div class="agent-pipeline-card">
+          <div class="agent-card-top">
+            <span class="agent-model-pill">${agent.model || 'gpt-4o'}</span>
+            <span class="agent-status-dot" title="Status: Online & Ready"></span>
+          </div>
+          <div class="agent-name">${agent.name}</div>
+          <div class="agent-role-pill">${agent.role}</div>
+          <div class="agent-tools-list">🔧 Tools: ${toolsText}</div>
+          <div class="agent-handoff-flow">➔ Handoff: ${handoffTarget} (${agent.latency_ms || 25}ms)</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  updateAdaptiveCardPreview() {
+    if (!this.adaptiveCardsPreview) return;
+    const select = document.getElementById("pa-event-type-select");
+    const eventType = select ? select.value : "goal";
+
+    let card = this.adaptiveCardsPreview.goal_card;
+    if (eventType === "tactical_shift") card = this.adaptiveCardsPreview.tactical_shift_card;
+    if (eventType === "incident") card = this.adaptiveCardsPreview.incident_card;
+
+    this.renderAdaptiveCardVisual(card);
+    const jsonPre = document.getElementById("ac-json-code");
+    if (jsonPre) jsonPre.textContent = JSON.stringify(card, null, 2);
+  }
+
+  async dispatchPowerAutomateWorkflow() {
+    const select = document.getElementById("pa-event-type-select");
+    const eventType = select ? select.value : "goal";
+    const webhookInput = document.getElementById("pa-webhook-url");
+    const webhookUrl = webhookInput ? webhookInput.value.trim() : "";
+    const statusBox = document.getElementById("pa-dispatch-status");
+    const btn = document.getElementById("btn-dispatch-pa");
+
+    if (btn) {
+      btn.textContent = "⏳ Triggering Flow...";
+      btn.disabled = true;
+    }
+
+    try {
+      const res = await fetch("/api/integrations/power-automate/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          webhook_url: webhookUrl || null,
+          match_id: this.matchId
+        })
+      });
+
+      const data = await res.json();
+      if (statusBox) {
+        statusBox.classList.remove("hidden");
+        const isSimulated = data.status === "simulated_success";
+        statusBox.innerHTML = `
+          <strong>✓ Power Automate Trigger ${isSimulated ? 'Validated (Simulation Mode)' : 'Delivered'}!</strong>
+          <div>Event: <b>${data.event_type.toUpperCase()}</b> • Timestamp: ${data.timestamp} • Status: ${data.status}</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">
+            ${isSimulated ? 'Enterprise payload verified against Microsoft Adaptive Card v1.5 schema and ready for Microsoft Teams channel webhook.' : `Webhook delivered with HTTP ${data.status_code}.`}
+          </div>
+        `;
+      }
+
+      if (data.adaptive_card) {
+        this.renderAdaptiveCardVisual(data.adaptive_card);
+        const jsonPre = document.getElementById("ac-json-code");
+        if (jsonPre) jsonPre.textContent = JSON.stringify(data.adaptive_card, null, 2);
+      }
+    } catch (err) {
+      console.warn("Power Automate dispatch error:", err);
+      if (statusBox) {
+        statusBox.classList.remove("hidden");
+        statusBox.innerHTML = `<span style="color: #ef4444;">Dispatch failed: ${err.message}</span>`;
+      }
+    } finally {
+      if (btn) {
+        btn.textContent = "⚡ Dispatch Workflow";
+        btn.disabled = false;
+      }
+    }
+  }
+
+  renderAdaptiveCardVisual(card) {
+    const container = document.getElementById("ac-rendered-body");
+    if (!container || !card) return;
+
+    const body = card.body || [];
+    let html = "";
+
+    body.forEach((block) => {
+      if (block.type === "Container" && block.style) {
+        const styleClass = block.style === "warning" ? "warning" : (block.style === "attention" ? "attention" : "");
+        const innerText = block.items && block.items[0] && block.items[0].text ? block.items[0].text : (block.items && block.items[0] && block.items[0].columns ? "MATCH EVENT" : "");
+        html += `<div class="ac-card-banner ${styleClass}">${innerText}</div>`;
+      } else if (block.type === "TextBlock") {
+        const isBolder = block.weight === "Bolder";
+        const fontSize = block.size === "Large" ? "1.1rem" : (block.size === "ExtraLarge" ? "1.4rem" : "0.85rem");
+        html += `<div class="ac-narrative-text" style="font-size: ${fontSize}; font-weight: ${isBolder ? '800' : '400'};">${block.text}</div>`;
+      } else if (block.type === "FactSet") {
+        html += `<table class="ac-fact-table">`;
+        (block.facts || []).forEach((f) => {
+          html += `<tr><td class="ac-fact-title">${f.title}</td><td class="ac-fact-value">${f.value}</td></tr>`;
+        });
+        html += `</table>`;
+      }
+    });
+
+    if (card.actions && card.actions.length > 0) {
+      html += `<div class="ac-actions-row">`;
+      card.actions.forEach((act) => {
+        html += `<a href="${act.url || '#'}" target="_blank" class="ac-action-btn">${act.title}</a>`;
+      });
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+  }
 }
 
 // Global initialization & public API exposure
 window.addEventListener("DOMContentLoaded", () => {
   window.omniPitch = new OmniPitchApp();
 });
+
 
 

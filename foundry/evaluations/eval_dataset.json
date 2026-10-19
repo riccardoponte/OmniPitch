@@ -1,0 +1,94 @@
+[
+  {
+    "scenario_id": "SCEN-01-GOAL-COUNTERATTACK",
+    "description": "Rapid counterattack goal by Cyrus Kane after high turnover in attacking third",
+    "telemetry_events": [
+      {
+        "event_id": "EV-042",
+        "minute": 34,
+        "second": 12,
+        "team_id": "avalon_city",
+        "player_name": "Julian Drake",
+        "event_type": "tackle",
+        "start_x": 45.2,
+        "start_y": 62.0,
+        "is_successful": true
+      },
+      {
+        "event_id": "EV-043",
+        "minute": 34,
+        "second": 15,
+        "team_id": "avalon_city",
+        "player_name": "Julian Drake",
+        "event_type": "pass",
+        "start_x": 46.1,
+        "start_y": 60.5,
+        "end_x": 78.4,
+        "end_y": 50.2,
+        "pass_difficulty": 0.74,
+        "is_successful": true
+      },
+      {
+        "event_id": "EV-044",
+        "minute": 34,
+        "second": 18,
+        "team_id": "avalon_city",
+        "player_name": "Cyrus Kane",
+        "event_type": "goal",
+        "start_x": 88.0,
+        "start_y": 52.0,
+        "expected_goals": 0.68,
+        "shot_speed_kmh": 104.2
+      }
+    ],
+    "ground_truth_claims": [
+      "Julian Drake won possession via a tackle at minute 34",
+      "Julian Drake executed a high-difficulty transition pass (0.74 rating) to Cyrus Kane",
+      "Cyrus Kane converted with a high xG shot (0.68) at 104.2 km/h"
+    ],
+    "expected_eval_metrics": {
+      "groundedness": 1.0,
+      "relevance": 0.98,
+      "coherence": 0.96,
+      "fluency": 0.97
+    }
+  },
+  {
+    "scenario_id": "SCEN-02-TACTICAL-HIGH-PRESS",
+    "description": "Suffocating high pressing sequence by Solaria Rovers forcing defensive error",
+    "telemetry_events": [
+      {
+        "event_id": "EV-108",
+        "minute": 62,
+        "second": 40,
+        "team_id": "solaria_rovers",
+        "player_name": "Victor Sterling",
+        "event_type": "press",
+        "start_x": 74.0,
+        "start_y": 42.0,
+        "is_sprint_burst": true
+      },
+      {
+        "event_id": "EV-109",
+        "minute": 62,
+        "second": 43,
+        "team_id": "solaria_rovers",
+        "player_name": "Lucian Vega",
+        "event_type": "interception",
+        "start_x": 68.5,
+        "start_y": 30.0,
+        "is_successful": true
+      }
+    ],
+    "ground_truth_claims": [
+      "Victor Sterling initiated sprint press in attacking third at minute 62",
+      "Lucian Vega completed defensive interception at X 68.5"
+    ],
+    "expected_eval_metrics": {
+      "groundedness": 1.0,
+      "relevance": 0.96,
+      "coherence": 0.95,
+      "fluency": 0.98
+    }
+  }
+]
