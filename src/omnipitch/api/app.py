@@ -15,13 +15,55 @@ from pydantic import BaseModel
 from omnipitch.agents.orchestrator import MultiAgentOrchestrator
 from omnipitch.analytics.league_data import LEAGUE_STANDINGS, TEAM_PROFILES, PLAYER_DOSSIERS
 from omnipitch.generator.engine import MatchSimulationEngine
-from omnipitch.models import MatchEvent, MatchMetadata
+from omnipitch.models import EventType, MatchEvent, MatchMetadata
+
+try:  # Optional: pick up Foundry credentials from a local .env during development
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:  # pragma: no cover
+    pass
+
+from contextlib import asynccontextmanager  # noqa: E402
+
+from omnipitch.agents.mcp_server import build_mcp_server  # noqa: E402
+from omnipitch.integrations.event_hubs import publisher as event_hub_publisher  # noqa: E402
+
+# Model Context Protocol endpoint (Streamable HTTP) over the same live match sessions
+mcp_server = build_mcp_server()
+mcp_app = None
+if mcp_server is not None:
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    # Allowed hosts come from the deployment (e.g. the Container Apps FQDN); local dev is open
+    allowed = [h.strip() for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    mcp_app = mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=bool(allowed),
+            allowed_hosts=allowed,
+            allowed_origins=[f"https://{h}" for h in allowed],
+        ),
+    )
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if mcp_server is not None:
+        async with mcp_server.session_manager.run():
+            yield
+    else:
+        yield
+
 
 app = FastAPI(
     title="OmniPitch API",
     description="Personalized Synthetic Match Intelligence & Multi-Agent Broadcast Overlays",
-    version="0.1.0",
+    version="2.0.0",
+    lifespan=lifespan,
 )
+if mcp_app is not None:
+    app.mount("/mcp", mcp_app)
 
 # Enable CORS for frontend dashboard and overlay consumers
 app.add_middleware(
@@ -46,16 +88,13 @@ async def serve_dashboard():
         return FileResponse(index_path)
     return {"message": "OmniPitch API is running. Visit /docs for OpenAPI specs."}
 
-# Global in-memory simulation state (can be backed by Azure Cosmos DB)
-simulation_sessions: Dict[str, MatchSimulationEngine] = {}
-orchestrator_sessions: Dict[str, MultiAgentOrchestrator] = {}
-
-
-def get_or_create_session(match_id: str, seed: int = 42) -> tuple[MatchSimulationEngine, MultiAgentOrchestrator]:
-    if match_id not in simulation_sessions:
-        simulation_sessions[match_id] = MatchSimulationEngine(match_id=match_id, seed=seed)
-        orchestrator_sessions[match_id] = MultiAgentOrchestrator(match_id=match_id)
-    return simulation_sessions[match_id], orchestrator_sessions[match_id]
+# Match sessions are shared with the MCP server so agents and viewers see the same match
+from omnipitch.sessions import (  # noqa: E402
+    get_or_create_session,
+    orchestrator_sessions,
+    reset_session,
+    simulation_sessions,
+)
 
 
 @app.get("/api/health")
@@ -64,8 +103,10 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "OmniPitch API",
-        "version": "0.1.0",
+        "version": "2.0.0",
         "multi_agent_system": "operational",
+        "mcp_endpoint": "/mcp/" if mcp_app is not None else None,
+        "event_hubs": event_hub_publisher.status(),
     }
 
 
@@ -96,7 +137,7 @@ async def stream_match_events(
 
     async def event_generator() -> AsyncGenerator[str, None]:
         count = 0
-        for event in engine.generate_stream(step_seconds=45):
+        for event in engine.play():
             count += 1
             payload = json.dumps(event.model_dump())
             yield f"event: match_event\ndata: {payload}\n\n"
@@ -113,41 +154,79 @@ async def stream_broadcast_overlays(
     persona: str = Query(default="analyst", description="'analyst' or 'fan'"),
     lang: str = Query(default="en", description="ISO language code: 'en', 'it', 'es', 'de'"),
     player: Optional[str] = Query(default=None, description="Player spotlight name for Player Focus Mode"),
+    club: Optional[str] = Query(default=None, description="Favourite club id: commentary takes that side"),
     delay: float = Query(default=1.0, ge=0.2, le=5.0),
-    max_overlays: int = Query(default=20, ge=3, le=60),
+    max_overlays: int = Query(default=20, ge=3, le=200),
+    include_events: bool = Query(default=False, description="Also emit the raw match_event behind each overlay"),
     seed: int = 42,
 ):
     """
     Server-Sent Events (SSE) streaming machine-readable broadcast overlays
-    synthesized by the Multi-Agent system (Tactical Analyst -> Narrator -> Verifier).
-    Supports Player Focus Mode with dedicated spotlight tracking.
+    synthesized by the Multi-Agent system (Tactical Analyst -> Commentator -> Narrator -> Verifier).
+    Supports Player Focus Mode, favourite-club commentary and four languages.
+
+    The match clock lives in the engine, so a new connection continues where the
+    previous one stopped (pause / resume, persona or language switch). With
+    include_events=true each overlay is preceded by the match_event it was built
+    from. A match_recap event follows half-time and full time, and a final
+    stream_end event reports whether the match is over.
     """
     engine, orchestrator = get_or_create_session(match_id, seed)
+    favourite = club if club in ("avalon_city", "solaria_rovers") else None
 
     async def overlay_generator() -> AsyncGenerator[str, None]:
         count = 0
-        for event in engine.generate_stream(step_seconds=45):
+        for event in engine.play():
             count += 1
+            await event_hub_publisher.publish(event)
+            if include_events:
+                yield f"event: match_event\ndata: {json.dumps(event.model_dump())}\n\n"
             overlay = await orchestrator.process_event(
                 event=event,
                 persona=persona,
                 language=lang,
                 target_player=player,
+                favourite_club=favourite,
             )
-            payload = json.dumps(overlay.model_dump())
-            yield f"event: broadcast_overlay\ndata: {payload}\n\n"
+            yield f"event: broadcast_overlay\ndata: {json.dumps(overlay.model_dump())}\n\n"
+            if event.event_type in (EventType.HALF_TIME, EventType.MATCH_END):
+                kind = "half_time" if event.event_type == EventType.HALF_TIME else "full_time"
+                recap = await orchestrator.build_recap(kind=kind, language=lang, persona=persona)
+                yield f"event: match_recap\ndata: {json.dumps(recap.model_dump())}\n\n"
             if count >= max_overlays:
                 break
             await asyncio.sleep(delay)
+        end_payload = {"full_time": engine.is_finished, "phase": engine.phase, "events_streamed": count}
+        yield f"event: stream_end\ndata: {json.dumps(end_payload)}\n\n"
 
     return StreamingResponse(overlay_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/match/{match_id}/recap")
+async def get_match_recap(
+    match_id: str,
+    kind: str = Query(default="full_time", pattern="^(half_time|full_time)$"),
+    lang: str = Query(default="en"),
+    persona: str = Query(default="analyst"),
+    seed: int = 42,
+):
+    """Automated match report (half-time or full-time) written by the Recap agent from the blackboard."""
+    _, orchestrator = get_or_create_session(match_id, seed)
+    recap = await orchestrator.build_recap(kind=kind, language=lang, persona=persona)
+    return recap.model_dump()
+
+
+@app.get("/api/match/{match_id}/agents/telemetry")
+async def get_agent_telemetry(match_id: str, seed: int = 42):
+    """Live multi-agent telemetry: per-agent latency, claims verified/rejected, LLM usage, fallbacks."""
+    _, orchestrator = get_or_create_session(match_id, seed)
+    return {**orchestrator.telemetry(), "event_hubs": event_hub_publisher.status()}
 
 
 @app.post("/api/match/{match_id}/reset")
 async def reset_match_session(match_id: str, seed: int = 42):
     """Resets the simulation engine and multi-agent memory for the match session."""
-    simulation_sessions[match_id] = MatchSimulationEngine(match_id=match_id, seed=seed)
-    orchestrator_sessions[match_id] = MultiAgentOrchestrator(match_id=match_id)
+    reset_session(match_id, seed)
     return {"status": "reset", "match_id": match_id}
 
 
@@ -181,8 +260,9 @@ async def export_to_microsoft_fabric(match_id: str, seed: int = 42):
     formatted for Microsoft Fabric OneLake Lakehouses and Power BI DirectLake models.
     """
     from omnipitch.analytics.fabric_export import MicrosoftFabricLakehouseExporter
-    engine, orchestrator = get_or_create_session(match_id, seed)
-    events = engine.generate_full_match(event_count=50)
+    _, orchestrator = get_or_create_session(match_id, seed)
+    # Export what has actually been played; a pre-match export previews a separate sample
+    events = orchestrator.memory.events_log or MatchSimulationEngine(match_id=match_id, seed=seed).generate_full_match(50)
 
     events_table = [MicrosoftFabricLakehouseExporter.format_event_for_lakehouse(e) for e in events]
     player_summary_table = MicrosoftFabricLakehouseExporter.export_player_physical_summary(orchestrator.memory)
@@ -349,11 +429,11 @@ async def get_match_events_table(match_id: str, seed: int = 42):
 
     rows = []
     for ev in events:
-        mm = f"{ev.minute:02d}"
-        ss = f"{ev.second:02d}"
         rows.append({
             "event_id": ev.event_id,
-            "match_time": f"{mm}:{ss}",
+            "match_time": ev.match_clock,
+            "minute_label": ev.match_minute_label,
+            "period": ev.period,
             "minute": ev.minute,
             "second": ev.second,
             "team_id": ev.team_id,
@@ -388,10 +468,11 @@ async def get_match_events_table(match_id: str, seed: int = 42):
 @app.get("/api/match/{match_id}/events/csv")
 async def export_match_events_csv(match_id: str, seed: int = 42):
     """Generates and streams an RFC-4180 compliant CSV of the match telemetry."""
-    engine, orchestrator = get_or_create_session(match_id, seed)
+    _, orchestrator = get_or_create_session(match_id, seed)
     events = orchestrator.memory.events_log
     if not events:
-        events = engine.generate_full_match(event_count=30)
+        # Never advance the live match to build a preview file
+        events = MatchSimulationEngine(match_id=match_id, seed=seed).generate_full_match(event_count=30)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -477,32 +558,28 @@ async def get_foundry_agents():
     else:
         manifest = {"agents": [], "orchestration_pattern": "Blackboard-Shared-State"}
 
-    # Augment agents with live runtime status
+    # Augment agents with live runtime telemetry from the running match
     _, orchestrator = get_or_create_session("MATCH-2026-001")
-    event_count = len(orchestrator.memory.events_log)
+    telemetry = orchestrator.telemetry()
+    latencies = telemetry["agent_latency_ms"]
 
     enriched_agents = []
     for agent in manifest.get("agents", []):
         agent_copy = dict(agent)
         agent_copy["status"] = "online"
-        agent_copy["events_processed"] = event_count
-        agent_copy["latency_ms"] = 12 if "mini" in agent.get("model", "") else 38
-        agent_copy["runtime_health"] = "healthy"
+        agent_copy["events_processed"] = telemetry["events_processed"]
+        agent_copy["latency_ms"] = latencies.get(agent["id"], 0.0)
         enriched_agents.append(agent_copy)
 
     return {
         "project_name": manifest.get("project_name", "OmniPitch-Match-Intelligence"),
         "orchestration_pattern": manifest.get("orchestration_pattern"),
-        "primary_model": manifest.get("primary_model", "gpt-4o"),
+        "primary_model": manifest.get("primary_model"),
+        "llm_policy": manifest.get("llm_policy"),
         "total_active_agents": len(enriched_agents),
-        "total_events_ingested": event_count,
+        "total_events_ingested": telemetry["events_processed"],
         "agents": enriched_agents,
-        "evaluations_summary": {
-            "groundedness": "100.0% (Zero Hallucination)",
-            "factual_consistency": "99.2%",
-            "relevance": "97.4%",
-            "average_pipeline_latency_ms": 78
-        }
+        "telemetry": telemetry,
     }
 
 

@@ -7,6 +7,15 @@
     },
     "location": {
       "value": "westeurope"
+    },
+    "containerImage": {
+      "value": "<your-registry>.azurecr.io/omnipitch:latest"
+    },
+    "foundryEndpoint": {
+      "value": ""
+    },
+    "foundryDeployment": {
+      "value": "gpt-4o-mini"
     }
   }
 }

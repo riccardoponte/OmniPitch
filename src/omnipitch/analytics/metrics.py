@@ -16,7 +16,8 @@ def calculate_euclidean_distance(c1: Coordinates, c2: Coordinates) -> float:
 def calculate_pass_difficulty(
     start: Coordinates,
     end: Coordinates,
-    defensive_pressure: float
+    defensive_pressure: float,
+    attacking_right: bool = True,
 ) -> Tuple[float, float]:
     """
     Computes:
@@ -29,7 +30,7 @@ def calculate_pass_difficulty(
     distance_factor = min(distance_m / 50.0, 1.0) * 0.5
 
     # Forward progression factor (passes towards goal are harder than backpasses)
-    forward_delta = (end.x - start.x) / 100.0
+    forward_delta = ((end.x - start.x) if attacking_right else (start.x - end.x)) / 100.0
     forward_factor = max(0.0, forward_delta) * 0.25
 
     # Pressure factor
@@ -41,7 +42,8 @@ def calculate_pass_difficulty(
 
 def calculate_expected_goals(
     shot_location: Coordinates,
-    defensive_pressure: float
+    defensive_pressure: float,
+    attacking_right: bool = True,
 ) -> float:
     """
     Computes Expected Goals (xG) based on:
@@ -49,7 +51,7 @@ def calculate_expected_goals(
     - Central angle to goal mouth
     - Opposition defensive pressure factor
     """
-    target = Coordinates(x=100.0, y=50.0)
+    target = Coordinates(x=100.0 if attacking_right else 0.0, y=50.0)
     dist_m = calculate_euclidean_distance(shot_location, target)
 
     # Base probability decay with distance
@@ -68,7 +70,7 @@ def calculate_expected_goals(
 
 
 def is_sprint_speed(speed_kmh: float) -> bool:
-    """Premier League physical performance threshold: sprints exceed 27.0 km/h."""
+    """Common elite-football tracking threshold: sprints exceed 27.0 km/h."""
     return speed_kmh >= 27.0
 
 
@@ -77,6 +79,7 @@ def evaluate_tactical_state(
     turnovers_last_5_min: int,
     pitch_zone_x: float
 ) -> TacticalContext:
+    # pitch_zone_x is the attacking team's progress up the pitch (0 = own goal, 100 = opponent goal)
     """
     Determines real-time tactical context:
     - Control vs Chaos: high consecutive passes & low turnovers = high control; fast turnovers = high chaos

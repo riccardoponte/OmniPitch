@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class EventType(str, Enum):
@@ -18,6 +18,7 @@ class EventType(str, Enum):
     FOUL = "foul"
     HALF_TIME = "half_time"
     MATCH_END = "match_end"
+    ADDED_TIME = "added_time"
 
 
 class PitchZone(str, Enum):
@@ -96,8 +97,44 @@ class MatchEvent(BaseModel):
     )
     is_successful: bool = True
 
+    # Match timeline: minute/second are elapsed match time; stoppage time keeps counting
+    # past 45:00 / 90:00 within the same period (e.g. 47:10 in period 1 is "45+2").
+    period: int = Field(1, ge=1, le=2, description="1 = first half, 2 = second half")
+    added_time_minutes: Optional[int] = Field(None, description="Stoppage time announced (ADDED_TIME events)")
+    shot_outcome: Optional[str] = Field(None, description="goal | saved | off_target | blocked")
+    card: Optional[str] = Field(None, description="yellow | red (FOUL events)")
+    score_home: int = 0
+    score_away: int = 0
+
     # Tactical context attached to this moment
     tactical_context: TacticalContext
+
+    def _stoppage_seconds(self) -> int:
+        """Seconds played beyond the period's regulation end (0 or negative = regulation time)."""
+        regulation = 45 if self.period == 1 else 90
+        return (self.minute * 60 + self.second) - regulation * 60
+
+    @computed_field
+    @property
+    def match_clock(self) -> str:
+        """Broadcast clock, e.g. '23:15', '45+2:10', '90+4:00'."""
+        over = self._stoppage_seconds()
+        if over > 0:
+            regulation = 45 if self.period == 1 else 90
+            return f"{regulation}+{over // 60}:{over % 60:02d}"
+        return f"{self.minute:02d}:{self.second:02d}"
+
+    @computed_field
+    @property
+    def match_minute_label(self) -> str:
+        """Minute as written in commentary (football convention), e.g. 1', 23', 45+2', 90+4'."""
+        regulation = 45 if self.period == 1 else 90
+        over = self._stoppage_seconds()
+        if over > 0:
+            return f"{regulation}+{over // 60 + 1}'"
+        if over == 0:
+            return f"{regulation}'"
+        return f"{self.minute + 1}'"
 
 
 class MatchScore(BaseModel):

@@ -19,21 +19,16 @@ def client():
 
 
 def test_foundry_agents_endpoint(client):
-    """Verifies that /api/foundry/agents returns the 5 Microsoft AI Foundry agents and benchmarks."""
+    """Verifies that /api/foundry/agents lists the real agent chain with live telemetry."""
     response = client.get("/api/foundry/agents")
     assert response.status_code == 200
     data = response.json()
-    assert data["total_active_agents"] == 5
-    assert data["primary_model"] == "gpt-4o"
-    assert "evaluations_summary" in data
-    assert "groundedness" in data["evaluations_summary"]
-    
     agent_ids = [a["id"] for a in data["agents"]]
-    assert "ingest_agent" in agent_ids
-    assert "tactical_analyst_agent" in agent_ids
-    assert "narrator_agent" in agent_ids
-    assert "verifier_agent" in agent_ids
-    assert "broadcast_director_agent" in agent_ids
+    assert agent_ids == ["ingest", "tactical_analyst", "lead_commentator", "narrator",
+                         "player_focus", "verifier", "broadcast", "recap"]
+    assert data["total_active_agents"] == len(agent_ids)
+    assert "grounding_rate" in data["telemetry"]
+    assert "foundry_configured" in data["telemetry"]
 
 
 def test_power_automate_preview_endpoint(client):

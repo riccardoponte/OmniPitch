@@ -6,9 +6,9 @@ This directory contains Infrastructure as Code (IaC) written in **Bicep** to dep
 
 ## 🏗️ Architecture Components Deployed
 
-1. **Azure Container Apps**: Serverless hosting for the OmniPitch FastAPI backend and real-time dashboard with horizontal autoscale (1-5 replicas).
+1. **Azure Container Apps**: Hosting for the OmniPitch FastAPI backend, dashboard and MCP endpoint (single replica: match sessions are in memory). Foundry and Event Hubs credentials are injected as secrets.
 2. **Azure Event Hubs**: Scalable event streaming platform for ingesting high-frequency synthetic football match events.
-3. **Azure Cosmos DB**: Globally distributed NoSQL database for match state, rolling analytics, and telemetry persistence.
+3. **Azure Cosmos DB** (optional, `deployCosmos=true`): reserved for persisting match sessions, which is what enables horizontal scale.
 4. **Azure Application Insights & Log Analytics**: Full-stack observability, request tracing, and latency monitoring for multi-agent handoffs.
 
 ---
@@ -27,5 +27,16 @@ az group create --name rg-omnipitch-prod --location westeurope
 az deployment group create \
   --resource-group rg-omnipitch-prod \
   --template-file main.bicep \
-  --parameters main.parameters.json
+  --parameters main.parameters.json \
+  --parameters containerImage=<registry>.azurecr.io/omnipitch:latest foundryEndpoint=<endpoint> foundryApiKey=<key>
+```
+
+Build and push the image first (from the repository root):
+```bash
+az acr build --registry <registry> --image omnipitch:latest .
+```
+
+Fastest alternative for a demo URL (builds from source, no registry setup):
+```bash
+az containerapp up --name omnipitch --resource-group rg-omnipitch-prod --location westeurope --source . --ingress external --target-port 8000
 ```
