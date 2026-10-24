@@ -125,3 +125,22 @@ async def test_orchestrator_full_match_is_fully_grounded_with_recap():
     xg = recap.stats["xg"]
     assert f"{xg['home']:.2f}" in recap.paragraphs[0] and f"{xg['away']:.2f}" in recap.paragraphs[0]
     assert recap.player_of_the_match is not None
+
+
+@pytest.mark.asyncio
+async def test_explain_moment_uses_match_state_at_that_moment():
+    from omnipitch.agents import mcp_server
+    from omnipitch.sessions import get_or_create_session, reset_session
+
+    reset_session("MATCH-EXPLAIN")
+    while not (await mcp_server.advance_match("MATCH-EXPLAIN")).get("full_time"):
+        pass
+    _, orchestrator = get_or_create_session("MATCH-EXPLAIN")
+    first_goal = next(e for e in orchestrator.events_history if e.event_type == EventType.GOAL)
+    result = await mcp_server.explain_moment(first_goal.event_id, match_id="MATCH-EXPLAIN")
+
+    idx = orchestrator.memory.events_log.index(first_goal)
+    then = orchestrator.memory.match_state(upto=idx + 1)
+    side = "home" if first_goal.team_id == "avalon_city" else "away"
+    assert f"{then[f'{side}_xg']:.2f}" in result["explanation"]
+    assert result["verification"]["is_grounded"]

@@ -72,3 +72,5 @@ local.settings.json
 README_AGENTE.md
 Codice di comportamento per gli Eventi.txt
 
+demo_video/build/
+demo_video/*.mp4

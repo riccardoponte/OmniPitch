@@ -155,14 +155,17 @@ class MatchBlackboardMemory:
             gk_stats.rating = rating
             gk_stats.rating_color = color
 
-    def match_state(self, home_id: str = "avalon_city") -> Dict[str, Any]:
-        """Running team totals every agent reads from (xG, shots, possession, pass streak)."""
+    def match_state(self, home_id: str = "avalon_city", upto: Optional[int] = None) -> Dict[str, Any]:
+        """Running team totals every agent reads from (xG, shots, possession, pass streak).
+
+        `upto` limits the totals to the first N events, to describe the match as it stood at that moment.
+        """
         state: Dict[str, Any] = {
             "home_xg": 0.0, "away_xg": 0.0, "home_shots": 0, "away_shots": 0,
             "home_passes": 0, "away_passes": 0, "home_cards": 0, "away_cards": 0,
             "pass_streak": 0, "streak_team": None,
         }
-        for e in self.events_log:
+        for e in self.events_log[:upto]:
             side = "home" if e.team_id == home_id else "away"
             if e.event_type in (EventType.SHOT, EventType.GOAL):
                 state[f"{side}_shots"] += 1

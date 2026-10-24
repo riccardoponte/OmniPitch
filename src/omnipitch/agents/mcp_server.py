@@ -95,7 +95,9 @@ async def explain_moment(event_id: str, match_id: str = DEFAULT_MATCH, persona: 
     event = history[idx]
     window = history[max(0, idx - orchestrator.window_size + 1): idx + 1]
     report = await orchestrator.tactical_agent.process({"recent_events": window})
-    state = orchestrator.memory.match_state()
+    # Explain the moment with the match as it stood then, not as it stands now
+    position = next(i for i, e in enumerate(orchestrator.memory.events_log) if e.event_id == event.event_id)
+    state = orchestrator.memory.match_state(upto=position + 1)
     draft = await orchestrator.narrator_agent.process({
         "tactical_report": report, "latest_event": event, "match_state": state,
         "persona": persona, "language": language,
