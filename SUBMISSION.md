@@ -8,7 +8,7 @@ Everything needed for the project page on the Hackathon Website. Submission dead
 OmniPitch — live match intelligence, written by agents and fact-checked before it reaches air
 
 ## Elevator pitch (≈120 words)
-Football stories don't start and end with the scoreline. OmniPitch turns a live stream of synthetic match events into a complete broadcast: spoken play-by-play in English, Italian, Spanish or German, a co-commentator who explains *why* each moment matters, a tactical match centre, and automated half-time and full-time reports. Eight specialised agents share one blackboard; the commentator and recap writer call a Microsoft Foundry model only on the moments that matter, and a Grounding Verifier checks every number and every name against the event log before anything airs — catching 99.8 % of injected hallucinations with zero false rejections. Viewers choose analyst or fan voice, their language, their club and their player; external agents such as GitHub Copilot can query the live match over MCP.
+Football stories don't start and end with the scoreline. OmniPitch turns a live stream of synthetic match events into a complete broadcast: spoken play-by-play in English, Italian, Spanish or German, a co-commentator who explains *why* each moment matters, a tactical match centre, and automated half-time and full-time reports. Eight specialised agents share one blackboard; when a Microsoft Foundry deployment is configured, the commentator and recap writer call it only on the moments that matter, and a Grounding Verifier checks every number and every name against the event log before anything airs — catching 99.8 % of injected hallucinations with zero false rejections. Viewers choose analyst or fan voice, their language, their club and their player; external agents such as GitHub Copilot can query the live match over MCP.
 
 ## What we built
 - Deterministic synthetic match engine with real match structure: kick-off, two halves, announced stoppage time, half-time, final whistle; passes (completed/lost), shots (goal/saved/off target/blocked), tackles, interceptions, pressing, fouls, yellow and red cards; xG, pass difficulty, ball and shot speed, sprint detection.
@@ -31,17 +31,29 @@ Broadcasters and streaming platforms need commentary and graphics for every mark
 
 ## Testing instructions (for judges)
 
-**Hosted demo:** `<paste the Azure Container Apps URL here>` — no login required.
+OmniPitch is submitted as a test build: one Python package, no account, no API key and no cloud resources needed. Without a Foundry endpoint every line comes from the verified multilingual phrase bank (the top bar shows `Local agents`); add the three `AZURE_AI_FOUNDRY_*` variables from `.env.example` to switch the commentator and recap writer to your Foundry deployment.
 
-1. Open the URL. In the control strip choose *Commentary* = Italiano, *Your club* = Avalon City, *View* = Fan, *Pace* = 2×.
+**Start it (Python 3.10+, about one minute):**
+```bash
+git clone https://github.com/riccardoponte/OmniPitch.git
+cd OmniPitch
+python -m venv .venv
+.venv\Scripts\activate          # macOS / Linux: source .venv/bin/activate
+pip install -e ".[dev]"
+uvicorn omnipitch.api:app --port 8000
+```
+On Windows you can instead double-click `START_OMNIPITCH.bat`.
+
+**Try it:**
+1. Open http://localhost:8000. In the control strip choose *Commentary* = Italiano, *Your club* = Avalon City, *View* = Fan, *Pace* = 2×.
 2. Click the speaker button to turn the voice on, then **Kick off**.
 3. Watch the *Live commentary* panel and listen; goals and cards are called with emphasis, and the co-commentator explains them.
 4. At half-time the broadcast pauses and the half-time report opens. Close it and press **Second half**.
 5. During play, open *Match centre → Agents & workflows* to see live agent latency and the verifier's running totals.
 6. At the final whistle the full-time report opens; *Read aloud* speaks it.
-7. Optional: connect an MCP client to `<URL>/mcp/` and call `get_match_state` or `explain_moment` with an event ID from the feed.
+7. Optional: connect an MCP client to `http://localhost:8000/mcp/` (VS Code / GitHub Copilot reads `.vscode/mcp.json`) and call `get_match_state`, or `explain_moment` with an event ID from the feed.
 
-**Run locally:** `pip install -e ".[dev]"` then `uvicorn omnipitch.api:app --port 8000` (Python 3.10+). Tests: `pytest -q`. Grounding evaluation: `python foundry/evaluations/run_grounding_eval.py`.
+**Check the claims:** `pytest -q` (51 tests) and `python foundry/evaluations/run_grounding_eval.py` (grounding evaluation, about 3 minutes).
 
 **Platform:** desktop or mobile browser (Chrome/Edge recommended for speech voices).
 
@@ -52,28 +64,24 @@ Broadcasters and streaming platforms need commentary and graphics for every mark
 A finished cut (1:41, 1080p, English voice-over, burned-in English captions) is produced by the scripts in `demo_video/`:
 `narration.py` (voice-over), `record.py` (Playwright drives a real seeded match), `cards.py` (title, closing and a live MCP call), `edit.py` (ffmpeg edit). Output: `demo_video/OmniPitch_demo.mp4` (not committed).
 
-### Original script (target 1:50, must stay under 2:00)
+| Time | Scene |
+| --- | --- |
+| 0:00 | Title card |
+| 0:11 | Live match in English, analyst view: pitch, lower third, commentary feed |
+| 0:25 | Switch to Italian, fan view, Avalon City: real Italian goal call, voiced |
+| 0:47 | Stoppage-time board (+4), clock 45+2, half-time pause and report |
+| 0:57 | Grounding Verifier: claims verified, evidence JSON, live agent telemetry |
+| 1:11 | Match centre: momentum, shot map, timeline |
+| 1:21 | Live MCP call: `explain_moment` on the 67' goal, verified |
+| 1:30 | Full-time report, closing card |
 
-No copyrighted music; use the app's own whistle and the synthetic commentary voice.
-
-| Time | On screen | Voice-over |
-| --- | --- | --- |
-| 0:00–0:08 | Scoreboard, press **Kick off** (English, Analyst, 2×) | "Football stories don't end at the scoreline. This is OmniPitch." |
-| 0:08–0:28 | Pitch animating, live commentary panel scrolling, voice on | "Eight agents turn every synthetic event into live commentary — in four languages, spoken — and explain why each moment matters." |
-| 0:28–0:45 | Switch to Italiano + Fan + Avalon City; a goal is called in Italian with the partisan line | "Same match, different fan: Italian, casual, and on Avalon's side." |
-| 0:45–1:02 | Pipeline bar with per-agent ms; JSON inspector with evidence IDs; Agents tab telemetry | "Every number and name is checked against the event log before it airs. In our evaluation the verifier caught 99.8 % of injected hallucinations, with zero false alarms." |
-| 1:02–1:15 | Board shows +3, clock 45+2, half-time pause and report | "Real match time — stoppage time, half-time, and an automated report at the break." |
-| 1:15–1:30 | Momentum chart (stoppage shaded), timeline, shot map | "Analysts get momentum, xG, ratings and a shot map, all from the same blackboard." |
-| 1:30–1:42 | VS Code: Copilot Agent Mode asks "Why did the last goal matter?" → `explain_moment` via MCP | "And any agent — like GitHub Copilot — can query the live match over MCP." |
-| 1:42–1:52 | Full-time report; closing card: Foundry · MCP · Container Apps · Event Hubs · Fabric · Teams | "Built on Microsoft Foundry and Azure. OmniPitch — every match, made for every fan." |
-
-Upload to YouTube or Vimeo as public/unlisted and paste the URL on the project page.
+No music; no third-party trademarks. Upload to YouTube or Vimeo as public/unlisted and paste the URL on the project page.
 
 ---
 
 ## Pre-submission checklist
-- [ ] GitHub repository is **public** and contains this branch merged into `main`
-- [ ] Hosted demo URL works in a private window
-- [ ] Video under 2:00, public URL, no third-party trademarks or copyrighted music
+- [x] GitHub repository is **public** and `main` is up to date
+- [x] Test build runs from the README in one command; CI green on Python 3.10–3.12
+- [ ] Video (1:41) uploaded to YouTube/Vimeo, link copied
 - [ ] Project page: description, technologies, repo URL, video URL, testing instructions
 - [ ] All submission text in English
