@@ -229,10 +229,11 @@ class MatchSimulationEngine:
         self,
         start_minute: int = 0,
         end_minute: int = 90,
-        step_seconds: int = 30
+        step_seconds: int = 30,
+        start_second: int = 0,
     ) -> Generator[MatchEvent, None, None]:
-        """Streams synthetic match events through time."""
-        current_time_sec = start_minute * 60
+        """Streams synthetic match events through time (start_second offsets start_minute)."""
+        current_time_sec = start_minute * 60 + start_second
         end_time_sec = end_minute * 60
 
         while current_time_sec <= end_time_sec:

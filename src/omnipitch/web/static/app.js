@@ -1,7 +1,62 @@
 /**
  * OmniPitch Live Match Intelligence & Interactive Pitch Visualizer
- * Fully featured with Multi-Agent Reasoning, Player Spotlight HUD, Zonal Heatmaps & TTS
+ * Multi-agent overlays, player spotlight, tactical canvases, match centre & Foundry hub.
  */
+
+// Canvas palette — mirrors the CSS custom properties in style.css
+const C = {
+  home: "#2fa6ff",
+  away: "#ff5140",
+  accent: "#d2ff3c",
+  accentInk: "#11140a",
+  text: "#ecebe6",
+  text2: "#a3a39d",
+  text3: "#6c6c67",
+  good: "#3fd28b",
+  warn: "#f5a524",
+  bad: "#ff5140",
+  bg: "#0b0c0e",
+  bg2: "#121316",
+  bg4: "#222429",
+  grassA: "#15351f",
+  grassB: "#183a23",
+  grassOut: "#123019",
+  line: "rgba(236, 235, 230, 0.55)",
+  gridLine: "rgba(236, 235, 230, 0.07)",
+};
+
+const FONT = {
+  display: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+  mono: "'IBM Plex Mono', ui-monospace, monospace",
+};
+
+const TEAM_NAMES = { avalon_city: "Avalon City", solaria_rovers: "Solaria Rovers" };
+
+// Optional portrait assets, keyed by player id
+const PLAYER_PHOTOS = { "AVA-08": "/static/img/julian_drake.jpg" };
+
+const rgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+
+const esc = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+
+/** Size a canvas to its CSS box at device pixel ratio; returns {ctx, w, h} in CSS pixels. */
+function fitCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(rect.width, 1);
+  const h = Math.max(rect.height, 1);
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
 
 class OmniPitchApp {
   constructor() {
@@ -12,9 +67,10 @@ class OmniPitchApp {
     this.isStreaming = false;
     this.showHeatmap = false;
 
-    // SSE EventSource instances
+    // SSE stream (events + overlays) and where to resume it
     this.overlaySource = null;
-    this.eventSource = null;
+    this.nextSecond = 0;
+    this.fullTime = false;
 
     // Canvas setup
     this.canvas = document.getElementById("pitch-canvas");
@@ -23,6 +79,8 @@ class OmniPitchApp {
     // State cache
     this.eventsReceived = 0;
     this.currentBall = { x: 50, y: 50 };
+    this.displayBall = { x: 50, y: 50 };
+    this.ballAnim = null;
     this.activePlayerNode = null;
     this.passVectors = [];
     this.homeScore = 0;
@@ -35,6 +93,7 @@ class OmniPitchApp {
     this.currentDataTableFilter = "all";
     this.activeModalPlayerName = "";
     this.activeModalPlayerId = "";
+    this.momentumHoverMinute = null;
 
     // Tactical formation 4-3-3 coordinates (normalized 0-100)
     this.homeFormation = [
@@ -68,7 +127,13 @@ class OmniPitchApp {
     this.initDOM();
     this.initPitch();
     this.renderPitch();
+    this.setSpotlightAvatar("AVA-08", 8, "avalon_city");
     this.fetchMatchCenterOverview();
+
+    // Canvas text uses web fonts — redraw once they are ready
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => this.redrawAll());
+    }
   }
 
   initDOM() {
@@ -83,6 +148,7 @@ class OmniPitchApp {
     const playerSelect = document.getElementById("player-select");
     playerSelect.addEventListener("change", (e) => {
       this.currentPlayer = e.target.value;
+      this.renderPitch();
       if (this.isStreaming) {
         this.restartStream();
       }
@@ -110,7 +176,6 @@ class OmniPitchApp {
     heatmapBtn.addEventListener("click", () => {
       this.showHeatmap = !this.showHeatmap;
       heatmapBtn.classList.toggle("active", this.showHeatmap);
-      heatmapBtn.textContent = this.showHeatmap ? "🔥 Zonal Heatmap: ON" : "🔥 Zonal Heatmap: OFF";
       this.renderPitch();
     });
 
@@ -123,6 +188,7 @@ class OmniPitchApp {
     const jsonBox = document.getElementById("json-inspector");
     jsonBtn.addEventListener("click", () => {
       jsonBox.classList.toggle("hidden");
+      jsonBtn.classList.toggle("active", !jsonBox.classList.contains("hidden"));
     });
 
     // Fabric Export button
@@ -151,27 +217,18 @@ class OmniPitchApp {
       btnPitchMode.addEventListener("click", () => {
         this.pitchMode = this.pitchMode === "telemetry" ? "formations" : "telemetry";
         btnPitchMode.classList.toggle("active", this.pitchMode === "formations");
-        btnPitchMode.textContent = this.pitchMode === "formations" ? "👥 Formations: ON" : "👥 Tactical XI View";
         this.renderPitch();
       });
     }
 
     // Match Center Tabs Switching
-    const mcTabs = document.querySelectorAll(".mc-tab-btn");
-    mcTabs.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        mcTabs.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        const targetId = btn.getAttribute("data-tab");
-        document.querySelectorAll(".mc-tab-content").forEach((c) => c.classList.remove("active"));
-        const target = document.getElementById(targetId);
-        if (target) target.classList.add("active");
+    document.querySelectorAll(".mc-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.activateTab(btn.getAttribute("data-tab")));
+    });
 
-        if (targetId === "tab-momentum") this.renderAttackMomentum();
-        if (targetId === "tab-shotmap") this.renderShotMap();
-        if (targetId === "tab-datatable") this.fetchLiveDataTable();
-        if (targetId === "tab-foundry") this.fetchFoundryHubData();
-      });
+    // Top nav shortcuts that open a specific match centre tab
+    document.querySelectorAll("[data-jump-tab]").forEach((link) => {
+      link.addEventListener("click", () => this.activateTab(link.getAttribute("data-jump-tab")));
     });
 
     // Momentum canvas hover
@@ -181,6 +238,8 @@ class OmniPitchApp {
       momCanvas.addEventListener("mouseleave", () => {
         const tip = document.getElementById("momentum-tooltip");
         if (tip) tip.classList.add("hidden");
+        this.momentumHoverMinute = null;
+        this.renderAttackMomentum();
       });
     }
 
@@ -195,24 +254,13 @@ class OmniPitchApp {
     }
 
     // Team Standings & Club Profile Triggers
-    const homeTeamTriggers = [
-      document.getElementById("home-team-trigger"),
-      document.getElementById("lineup-home-team-trigger"),
-    ];
-    homeTeamTriggers.forEach((trigger) => {
-      if (trigger) {
-        trigger.addEventListener("click", () => this.openTeamModal("avalon_city"));
-      }
+    ["home-team-trigger", "lineup-home-team-trigger"].forEach((id) => {
+      const trigger = document.getElementById(id);
+      if (trigger) trigger.addEventListener("click", () => this.openTeamModal("avalon_city"));
     });
-
-    const awayTeamTriggers = [
-      document.getElementById("away-team-trigger"),
-      document.getElementById("lineup-away-team-trigger"),
-    ];
-    awayTeamTriggers.forEach((trigger) => {
-      if (trigger) {
-        trigger.addEventListener("click", () => this.openTeamModal("solaria_rovers"));
-      }
+    ["away-team-trigger", "lineup-away-team-trigger"].forEach((id) => {
+      const trigger = document.getElementById(id);
+      if (trigger) trigger.addEventListener("click", () => this.openTeamModal("solaria_rovers"));
     });
 
     // Team Modal Close & Tab Switching
@@ -310,13 +358,39 @@ class OmniPitchApp {
     if (btnCopyCardJson) {
       btnCopyCardJson.addEventListener("click", () => {
         const code = document.getElementById("ac-json-code");
+        const label = btnCopyCardJson.querySelector("span");
         if (code && navigator.clipboard) {
           navigator.clipboard.writeText(code.textContent);
-          btnCopyCardJson.textContent = "✓ Copied!";
-          setTimeout(() => (btnCopyCardJson.textContent = "📋 Copy JSON"), 2000);
+          label.textContent = "Copied";
+          setTimeout(() => (label.textContent = "Copy"), 2000);
         }
       });
     }
+
+    // Keep canvases crisp when the layout changes
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => this.redrawAll(), 80);
+    });
+  }
+
+  activateTab(targetId) {
+    document.querySelectorAll(".mc-tab-btn").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-tab") === targetId);
+    });
+    document.querySelectorAll(".mc-tab-content").forEach((c) => c.classList.toggle("active", c.id === targetId));
+
+    if (targetId === "tab-momentum") this.renderAttackMomentum();
+    if (targetId === "tab-shotmap") this.renderShotMap();
+    if (targetId === "tab-datatable") this.fetchLiveDataTable();
+    if (targetId === "tab-foundry") this.fetchFoundryHubData();
+  }
+
+  redrawAll() {
+    this.renderPitch();
+    this.renderAttackMomentum();
+    this.renderShotMap();
   }
 
   setPersona(persona) {
@@ -337,43 +411,60 @@ class OmniPitchApp {
     }
   }
 
+  setStreamUi(live, idleLabel) {
+    const btn = document.getElementById("btn-stream-toggle");
+    document.getElementById("stream-icon").setAttribute("href", live ? "#i-pause" : "#i-play");
+    document.getElementById("stream-text").textContent = live ? "Pause" : idleLabel;
+    btn.classList.toggle("is-live", live);
+    document.body.classList.toggle("is-live", live);
+    document.querySelector(".live-label").textContent = live
+      ? "Live"
+      : (this.fullTime ? "Full time" : (this.eventsReceived ? "Paused" : "Pre-match"));
+  }
+
   startStream() {
+    if (this.fullTime) {
+      this.resetSimulation().then(() => this.startStream());
+      return;
+    }
     this.isStreaming = true;
-    document.getElementById("stream-icon").textContent = "⏸";
-    document.getElementById("stream-text").textContent = "Pause Match Stream";
-    document.getElementById("btn-stream-toggle").style.background = "linear-gradient(135deg, #e11d48, #f43f5e)";
+    this.setStreamUi(true);
     this.playWhistleSound();
 
-    // Start Overlay SSE stream with player spotlight query
-    let overlayUrl = `/api/match/${this.matchId}/overlays/stream?persona=${this.currentPersona}&lang=${this.currentLang}&delay=1.0`;
+    // One SSE stream carries each match_event followed by the overlay built from it,
+    // so pitch, scoreboard and commentary always describe the same moment.
+    let overlayUrl = `/api/match/${this.matchId}/overlays/stream?persona=${this.currentPersona}&lang=${this.currentLang}` +
+      `&delay=1.0&include_events=true&max_overlays=130&start_second=${this.nextSecond || 0}`;
     if (this.currentPlayer) {
       overlayUrl += `&player=${encodeURIComponent(this.currentPlayer)}`;
     }
-    this.overlaySource = new EventSource(overlayUrl);
+    const source = new EventSource(overlayUrl);
+    this.overlaySource = source;
 
-    this.overlaySource.addEventListener("broadcast_overlay", (e) => {
+    source.addEventListener("match_event", (e) => this.handleMatchEvent(JSON.parse(e.data)));
+    source.addEventListener("broadcast_overlay", (e) => this.handleBroadcastOverlay(JSON.parse(e.data)));
+    source.addEventListener("stream_end", (e) => {
       const data = JSON.parse(e.data);
-      this.handleBroadcastOverlay(data);
+      this.nextSecond = data.next_second;
+      if (data.full_time) {
+        this.fullTime = true;
+        this.stopStream("Replay");
+        this.playWhistleSound();
+      } else {
+        this.stopStream();
+      }
     });
-
-    // Start Event SSE stream
-    const eventUrl = `/api/match/${this.matchId}/events/stream?delay=1.0`;
-    this.eventSource = new EventSource(eventUrl);
-
-    this.eventSource.addEventListener("match_event", (e) => {
-      const data = JSON.parse(e.data);
-      this.handleMatchEvent(data);
-    });
+    // Don't let EventSource silently reconnect and replay from a stale offset
+    source.onerror = () => {
+      if (this.overlaySource === source && this.isStreaming) this.stopStream();
+    };
   }
 
-  stopStream() {
+  stopStream(idleLabel = "Resume") {
     this.isStreaming = false;
-    document.getElementById("stream-icon").textContent = "▶";
-    document.getElementById("stream-text").textContent = "Resume Match Stream";
-    document.getElementById("btn-stream-toggle").style.background = "";
+    this.setStreamUi(false, idleLabel);
 
     if (this.overlaySource) this.overlaySource.close();
-    if (this.eventSource) this.eventSource.close();
   }
 
   restartStream() {
@@ -382,22 +473,34 @@ class OmniPitchApp {
   }
 
   async resetSimulation() {
-    this.stopStream();
     this.eventsReceived = 0;
+    this.nextSecond = 0;
+    this.fullTime = false;
+    this.stopStream("Kick off");
     this.homeScore = 0;
     this.awayScore = 0;
     this.passVectors = [];
     this.currentBall = { x: 50, y: 50 };
+    this.displayBall = { x: 50, y: 50 };
+    this.ballAnim = null;
     this.activePlayerNode = null;
     this.latestOverlay = null;
+    this.liveTableRows = [];
 
     document.getElementById("home-score").textContent = "0";
     document.getElementById("away-score").textContent = "0";
     document.getElementById("match-clock").textContent = "00:00";
-    document.getElementById("event-counter").textContent = "0 events received";
+    document.getElementById("event-counter").textContent = "0 events";
+    document.getElementById("overlay-time").textContent = "00:00";
+    document.getElementById("overlay-headline").textContent = "Waiting for kick-off";
+    document.getElementById("overlay-narrative").textContent =
+      "Simulation reset. Press Kick off to replay the match from the first whistle.";
+    document.getElementById("overlay-genby").textContent = "";
+    document.getElementById("evidence-count").textContent = "0 events";
+    document.getElementById("evidence-tags").innerHTML = `<span class="tag-empty">No citations yet</span>`;
     document.getElementById("telemetry-list").innerHTML = `
       <div class="telemetry-placeholder">
-        <div class="pulse-text">Simulation reset. Click "Start Match Stream" above.</div>
+        <div class="pulse-text">Simulation reset — press Kick off.</div>
       </div>
     `;
     this.renderPitch();
@@ -431,38 +534,47 @@ class OmniPitchApp {
     // 1. Animate Multi-Agent Pipeline sequence
     this.pulsePipeline();
 
-    // 2. Update Overlay card content
+    // 2. Update Overlay card content (re-trigger the entrance animation)
+    const body = document.querySelector(".broadcast-body");
+    body.classList.remove("flash");
+    void body.offsetWidth;
+    body.classList.add("flash");
+
     document.getElementById("overlay-time").textContent = overlay.match_time;
     document.getElementById("overlay-headline").textContent = overlay.headline;
     document.getElementById("overlay-narrative").textContent = overlay.narrative;
-    document.getElementById("overlay-genby").textContent = overlay.generated_by;
+    document.getElementById("overlay-genby").textContent = overlay.generated_by ? `via ${overlay.generated_by}` : "";
 
     // 3. Grounding citations
     const tagsContainer = document.getElementById("evidence-tags");
+    const ids = overlay.evidence_event_ids || [];
+    document.getElementById("evidence-count").textContent = `${ids.length} event${ids.length === 1 ? "" : "s"}`;
     tagsContainer.innerHTML = "";
-    if (overlay.evidence_event_ids && overlay.evidence_event_ids.length > 0) {
-      document.getElementById("evidence-count").textContent = `${overlay.evidence_event_ids.length} Citations`;
-      overlay.evidence_event_ids.forEach((eid) => {
+    if (ids.length > 0) {
+      ids.forEach((eid, i) => {
         const tag = document.createElement("span");
         tag.className = "tag-event";
+        tag.style.animationDelay = `${i * 40}ms`;
         tag.textContent = eid;
         tagsContainer.appendChild(tag);
       });
+    } else {
+      tagsContainer.innerHTML = `<span class="tag-empty">No citations for this moment</span>`;
     }
 
     // 4. Update Trace Telemetry badge
     if (overlay.trace) {
       const ms = overlay.trace.latency_ms || 12.0;
       const model = overlay.trace.model_name || "gpt-4o";
-      document.getElementById("trace-badge").textContent = `⚡ ${model} • ${ms}ms`;
+      document.getElementById("trace-badge").textContent = `${model} · ${ms} ms`;
     }
 
     // 5. Update Player Spotlight HUD if present
     if (overlay.player_focus) {
       const pf = overlay.player_focus;
       document.getElementById("spotlight-name").textContent = pf.player_name;
-      document.getElementById("spotlight-avatar").textContent = `#${pf.player_id.slice(-2)}`;
-      document.getElementById("spotlight-team").textContent = `${pf.team_id.replace('_', ' ').toUpperCase()} • Spotlight Target`;
+      this.setSpotlightAvatar(pf.player_id, parseInt(pf.player_id.slice(-2), 10), pf.team_id);
+      document.getElementById("spotlight-team").textContent = `${TEAM_NAMES[pf.team_id] || pf.team_id} · Spotlight`;
       document.getElementById("spotlight-sprints").textContent = pf.sprint_bursts_count;
       document.getElementById("spotlight-dist").textContent = `${pf.distance_covered_km.toFixed(2)} km`;
       document.getElementById("spotlight-acc").textContent = `${pf.pass_completion_rate}%`;
@@ -481,31 +593,45 @@ class OmniPitchApp {
       document.getElementById("val-control").textContent = `${Math.round(ctrl * 100)}% Control`;
       document.getElementById("bar-control").style.width = `${Math.round(ctrl * 100)}%`;
 
-      document.getElementById("val-pressure").textContent = `${press.toFixed(2)} (${press > 0.6 ? 'High' : 'Moderate'})`;
+      document.getElementById("val-pressure").textContent = `${press.toFixed(2)} (${press > 0.6 ? "High" : "Moderate"})`;
       document.getElementById("bar-pressure").style.width = `${Math.round(press * 100)}%`;
 
-      document.getElementById("val-tempo").textContent = tempo;
+      document.getElementById("val-tempo").textContent = tempo.replace(/-/g, " ");
     }
+  }
+
+  setSpotlightAvatar(playerId, number, teamId) {
+    const avatar = document.getElementById("spotlight-avatar");
+    const card = document.getElementById("player-spotlight-panel");
+    const photo = PLAYER_PHOTOS[playerId];
+    const teamColor = teamId === "solaria_rovers" ? C.away : C.home;
+    avatar.textContent = Number.isFinite(number) ? number : "";
+    avatar.style.backgroundColor = teamColor;
+    avatar.style.backgroundImage = photo ? `url("${photo}")` : "";
+    avatar.classList.toggle("has-photo", Boolean(photo));
+    card.style.borderLeftColor = teamColor;
   }
 
   handleMatchEvent(event) {
     this.eventsReceived += 1;
-    document.getElementById("event-counter").textContent = `${this.eventsReceived} events received`;
+    document.getElementById("event-counter").textContent = `${this.eventsReceived} events`;
 
     // Clock
     const mm = String(event.minute).padStart(2, "0");
     const ss = String(event.second).padStart(2, "0");
     document.getElementById("match-clock").textContent = `${mm}:${ss}`;
+    this.nextSecond = event.minute * 60 + event.second + 1;
 
     // Score if Goal
     if (event.event_type === "goal") {
-      if (event.team_id === "avalon_city") {
-        this.homeScore += 1;
-        document.getElementById("home-score").textContent = this.homeScore;
-      } else {
-        this.awayScore += 1;
-        document.getElementById("away-score").textContent = this.awayScore;
-      }
+      const isHome = event.team_id === "avalon_city";
+      if (isHome) this.homeScore += 1;
+      else this.awayScore += 1;
+      const digit = document.getElementById(isHome ? "home-score" : "away-score");
+      digit.textContent = isHome ? this.homeScore : this.awayScore;
+      digit.classList.remove("bump");
+      void digit.offsetWidth;
+      digit.classList.add("bump");
     }
 
     // Append to telemetry list
@@ -538,12 +664,29 @@ class OmniPitchApp {
       if (this.passVectors.length > 8) this.passVectors.shift();
     }
 
-    this.renderPitch();
+    this.animateBall();
 
     // Dynamically update match center overview on live stream events
     if (this.eventsReceived % 2 === 0 || event.event_type === "goal" || event.event_type === "shot") {
       this.fetchMatchCenterOverview();
     }
+  }
+
+  animateBall() {
+    this.ballAnim = { from: { ...this.displayBall }, to: { ...this.currentBall }, start: performance.now(), dur: 520 };
+    const step = (now) => {
+      if (!this.ballAnim) return;
+      const t = Math.min((now - this.ballAnim.start) / this.ballAnim.dur, 1);
+      const e = 1 - Math.pow(1 - t, 3);
+      this.displayBall = {
+        x: this.ballAnim.from.x + (this.ballAnim.to.x - this.ballAnim.from.x) * e,
+        y: this.ballAnim.from.y + (this.ballAnim.to.y - this.ballAnim.from.y) * e,
+      };
+      this.renderPitch();
+      if (t < 1) requestAnimationFrame(step);
+      else this.ballAnim = null;
+    };
+    requestAnimationFrame(step);
   }
 
   appendTelemetryRow(event, timecode) {
@@ -554,35 +697,28 @@ class OmniPitchApp {
     const row = document.createElement("div");
     row.className = "telemetry-item";
 
-    const badgeClass = `tele-badge tele-badge-${event.event_type.replace('_', '')}`;
+    const badgeClass = `tele-badge tele-badge-${event.event_type.replace(/_/g, "")}`;
     const playerName = event.player ? event.player.name : "Team";
-    const teamShort = event.team_id === "avalon_city" ? "AVA" : "SOL";
+    const side = event.team_id === "avalon_city" ? "home" : "away";
 
-    let metricText = "";
-    if (event.expected_goals) {
-      metricText += `xG: ${event.expected_goals} | `;
-    }
-    if (event.ball_speed_kmh) {
-      metricText += `${event.ball_speed_kmh} km/h `;
-    }
-    if (event.pass_distance_m) {
-      metricText += `| ${event.pass_distance_m}m (diff: ${event.pass_difficulty_rating})`;
-    }
-    if (event.is_sprint_burst) {
-      metricText += ` | 🔥 SPRINT`;
-    }
+    const metrics = [];
+    if (event.expected_goals) metrics.push(`xG ${event.expected_goals}`);
+    if (event.ball_speed_kmh) metrics.push(`${event.ball_speed_kmh} km/h`);
+    if (event.pass_distance_m) metrics.push(`${event.pass_distance_m} m · diff ${event.pass_difficulty_rating}`);
+    if (event.is_sprint_burst) metrics.push(`<span class="tele-sprint">sprint</span>`);
 
     row.innerHTML = `
       <div class="tele-left">
         <span class="tele-time">${timecode}</span>
-        <span class="${badgeClass}">${event.event_type}</span>
-        <span style="font-weight: 600;">${playerName} (${teamShort})</span>
+        <span class="${badgeClass}">${esc(event.event_type.replace(/_/g, " "))}</span>
+        <span class="tele-team ${side}"></span>
+        <span>${esc(playerName)}</span>
       </div>
-      <div class="tele-metrics">${metricText}</div>
+      <div class="tele-metrics">${metrics.join(" · ")}</div>
     `;
 
     list.insertBefore(row, list.firstChild);
-    if (list.children.length > 30) {
+    if (list.children.length > 40) {
       list.removeChild(list.lastChild);
     }
   }
@@ -593,10 +729,10 @@ class OmniPitchApp {
       setTimeout(() => {
         const el = document.getElementById(id);
         if (el) {
-          el.classList.add("pulse");
-          setTimeout(() => el.classList.remove("pulse"), 500);
+          el.classList.add("pulse", "active");
+          setTimeout(() => el.classList.remove("pulse"), 520);
         }
-      }, idx * 120);
+      }, idx * 130);
     });
   }
 
@@ -605,42 +741,116 @@ class OmniPitchApp {
      ------------------------------------------------------------------------- */
 
   initPitch() {
-    const dpr = window.devicePixelRatio || 1;
-    const rect = this.canvas.getBoundingClientRect();
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
-    this.ctx.scale(dpr, dpr);
-    this.pitchW = rect.width;
-    this.pitchH = rect.height;
-
+    this.sizePitch();
     this.canvas.addEventListener("click", (e) => this.handlePitchClick(e));
     this.canvas.addEventListener("mousemove", (e) => this.handlePitchMouseMove(e));
   }
 
+  sizePitch() {
+    const { ctx, w, h } = fitCanvas(this.canvas);
+    this.ctx = ctx;
+    this.pitchW = w;
+    this.pitchH = h;
+    const padX = Math.round(w * 0.035);
+    const padY = Math.round(h * 0.05);
+    this.field = { x: padX, y: padY, w: w - padX * 2, h: h - padY * 2 };
+  }
+
   toCanvasCoords(normX, normY) {
-    const pad = 24;
-    const w = this.pitchW - pad * 2;
-    const h = this.pitchH - pad * 2;
+    const f = this.field;
     return {
-      x: pad + (normX / 100) * w,
-      y: pad + (normY / 100) * h,
+      x: f.x + (normX / 100) * f.w,
+      y: f.y + (normY / 100) * f.h,
     };
   }
 
+  /** Draws grass and regulation markings (105 x 68 m) into the field rect. */
+  drawPitchSurface(ctx, w, h) {
+    const f = this.field;
+    const sx = f.w / 105;
+    const sy = f.h / 68;
+    const s = Math.min(sx, sy);
+
+    ctx.fillStyle = C.grassOut;
+    ctx.fillRect(0, 0, w, h);
+
+    const stripes = 14;
+    const stripeW = f.w / stripes;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 === 0 ? C.grassA : C.grassB;
+      ctx.fillRect(f.x + i * stripeW, f.y, stripeW + 0.5, f.h);
+    }
+
+    // Floodlight vignette
+    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.75);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = C.line;
+    ctx.fillStyle = C.line;
+    ctx.lineWidth = Math.max(1.2, w / 600);
+
+    const midX = f.x + f.w / 2;
+    const midY = f.y + f.h / 2;
+
+    ctx.strokeRect(f.x, f.y, f.w, f.h);
+
+    ctx.beginPath();
+    ctx.moveTo(midX, f.y);
+    ctx.lineTo(midX, f.y + f.h);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(midX, midY, 9.15 * s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.max(2, s * 0.35), 0, Math.PI * 2);
+    ctx.fill();
+
+    const arcA = Math.acos((16.5 - 11) / 9.15);
+    [0, 1].forEach((side) => {
+      const dir = side === 0 ? 1 : -1;
+      const gx = side === 0 ? f.x : f.x + f.w;
+
+      // Penalty area, goal area
+      ctx.strokeRect(side === 0 ? gx : gx - 16.5 * sx, midY - 20.16 * sy, 16.5 * sx, 40.32 * sy);
+      ctx.strokeRect(side === 0 ? gx : gx - 5.5 * sx, midY - 9.16 * sy, 5.5 * sx, 18.32 * sy);
+
+      // Penalty spot & arc
+      const spotX = gx + dir * 11 * sx;
+      ctx.beginPath();
+      ctx.arc(spotX, midY, Math.max(1.6, s * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      if (side === 0) ctx.arc(spotX, midY, 9.15 * s, -arcA, arcA);
+      else ctx.arc(spotX, midY, 9.15 * s, Math.PI - arcA, Math.PI + arcA);
+      ctx.stroke();
+
+      // Goal frame
+      ctx.strokeRect(side === 0 ? gx - 2 * sx : gx, midY - 3.66 * sy, 2 * sx, 7.32 * sy);
+    });
+
+    // Corner arcs
+    const cr = 1.2 * s;
+    [[f.x, f.y, 0, 0.5], [f.x + f.w, f.y, 0.5, 1], [f.x + f.w, f.y + f.h, 1, 1.5], [f.x, f.y + f.h, 1.5, 2]].forEach(([cx, cy, a0, a1]) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, a0 * Math.PI, a1 * Math.PI);
+      ctx.stroke();
+    });
+  }
+
   renderPitch() {
+    if (!this.field) return;
+    this.sizePitch();
     const ctx = this.ctx;
     const w = this.pitchW;
     const h = this.pitchH;
+    const f = this.field;
 
     ctx.clearRect(0, 0, w, h);
-
-    // 1. Grass texture with pitch stripes
-    const stripes = 10;
-    const stripeW = w / stripes;
-    for (let i = 0; i < stripes; i++) {
-      ctx.fillStyle = i % 2 === 0 ? "#0d2017" : "#0f261c";
-      ctx.fillRect(i * stripeW, 0, stripeW, h);
-    }
+    this.drawPitchSurface(ctx, w, h);
 
     // Branch to full tactical formations head-to-head comparison if toggled
     if (this.pitchMode === "formations") {
@@ -648,142 +858,142 @@ class OmniPitchApp {
       return;
     }
 
-    // 2. Optional Zonal Heatmap Overlay
+    // Optional zonal overlay (thirds)
     if (this.showHeatmap) {
-      const thirdW = w / 3;
-      // Defensive third (Home)
-      ctx.fillStyle = "rgba(0, 163, 224, 0.12)";
-      ctx.fillRect(0, 0, thirdW, h);
-      // Middle contest third
-      ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
-      ctx.fillRect(thirdW, 0, thirdW, h);
-      // Attacking third (Away goal)
-      ctx.fillStyle = "rgba(225, 29, 72, 0.12)";
-      ctx.fillRect(thirdW * 2, 0, thirdW, h);
-
-      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      ctx.font = "10px JetBrains Mono";
-      ctx.fillText("DEFENSIVE THIRD (34%)", 30, 20);
-      ctx.fillText("MIDDLE THIRD (42%)", thirdW + 30, 20);
-      ctx.fillText("ATTACKING THIRD (24%)", thirdW * 2 + 30, 20);
+      const thirdW = f.w / 3;
+      const zones = [
+        { c: C.home, a: 0.16, label: "Defensive third", pct: "34%" },
+        { c: C.warn, a: 0.1, label: "Middle third", pct: "42%" },
+        { c: C.away, a: 0.16, label: "Attacking third", pct: "24%" },
+      ];
+      zones.forEach((z, i) => {
+        ctx.fillStyle = rgba(z.c, z.a);
+        ctx.fillRect(f.x + thirdW * i, f.y, thirdW, f.h);
+        ctx.fillStyle = "rgba(236,235,230,0.85)";
+        ctx.font = `700 ${Math.round(w / 34)}px ${FONT.display}`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText(z.pct, f.x + thirdW * i + 10, f.y + 10);
+        ctx.font = `500 ${Math.max(9, Math.round(w / 90))}px ${FONT.mono}`;
+        ctx.fillStyle = "rgba(236,235,230,0.6)";
+        ctx.fillText(z.label.toUpperCase(), f.x + thirdW * i + 10, f.y + 12 + w / 34);
+      });
     }
 
-    // 3. Pitch Boundary & Lines
-    const pad = 24;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-    ctx.lineWidth = 2;
+    // Formations & players
+    this.renderTeamNodes(this.homeFormation, C.home, "#04131f");
+    this.renderTeamNodes(this.awayFormation, C.away, "#1f0604");
 
-    ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
-
-    // Halfway line & center circle
-    const midX = w / 2;
-    ctx.beginPath();
-    ctx.moveTo(midX, pad);
-    ctx.lineTo(midX, h - pad);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(midX, h / 2, 54, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.beginPath();
-    ctx.arc(midX, h / 2, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Penalty Boxes
-    const boxW = 80;
-    const boxH = 160;
-    const boxY = (h - boxH) / 2;
-
-    ctx.strokeRect(pad, boxY, boxW, boxH);
-    ctx.strokeRect(w - pad - boxW, boxY, boxW, boxH);
-
-    // 4. Render Formations & Players
-    this.renderTeamNodes(this.homeFormation, "#00A3E0", "#ffffff");
-    this.renderTeamNodes(this.awayFormation, "#e11d48", "#FFD100");
-
-    // 5. Render Pass & Shot Vectors
-    this.passVectors.forEach((vec) => {
+    // Pass & shot vectors — newest drawn strongest
+    const n = this.passVectors.length;
+    this.passVectors.forEach((vec, i) => {
       const p1 = this.toCanvasCoords(vec.start.x, vec.start.y);
       const p2 = this.toCanvasCoords(vec.end.x, vec.end.y);
-
-      let strokeColor = "#00f2fe";
-      if (vec.type === "shot" || vec.type === "goal") strokeColor = "#ec4899";
-      else if (vec.difficulty > 0.7) strokeColor = "#e11d48";
-      else if (vec.difficulty > 0.45) strokeColor = "#f59e0b";
+      const isShot = vec.type === "shot" || vec.type === "goal";
+      const alpha = 0.25 + 0.75 * ((i + 1) / n);
+      const base = isShot ? C.accent : (vec.team === "avalon_city" ? "#9fd4ff" : "#ffb0a8");
 
       ctx.save();
-      ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = vec.type === "shot" || vec.type === "goal" ? 3.5 : 2.5;
-      ctx.shadowColor = strokeColor;
-      ctx.shadowBlur = 10;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = base;
+      ctx.fillStyle = base;
+      ctx.lineWidth = isShot ? 2.5 : 1.6;
+      if (vec.difficulty > 0.6 && !isShot) ctx.setLineDash([5, 4]);
 
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Arrow head or xG callout
-      ctx.fillStyle = strokeColor;
+      // Arrowhead
+      const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const ah = isShot ? 9 : 7;
       ctx.beginPath();
-      ctx.arc(p2.x, p2.y, 4, 0, Math.PI * 2);
+      ctx.moveTo(p2.x, p2.y);
+      ctx.lineTo(p2.x - ah * Math.cos(ang - 0.42), p2.y - ah * Math.sin(ang - 0.42));
+      ctx.lineTo(p2.x - ah * Math.cos(ang + 0.42), p2.y - ah * Math.sin(ang + 0.42));
+      ctx.closePath();
       ctx.fill();
 
       if (vec.xg) {
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 10px JetBrains Mono";
-        ctx.fillText(`xG ${vec.xg}`, p2.x + 8, p2.y - 4);
+        const label = `xG ${vec.xg}`;
+        ctx.font = `600 11px ${FONT.mono}`;
+        const tw = ctx.measureText(label).width;
+        // Flip the tag to the left of the arrow when it would leave the canvas
+        const lx = p2.x + 8 + tw + 10 > w ? p2.x - 8 - tw - 10 : p2.x + 8;
+        const ly = Math.max(p2.y - 20, 2);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = C.accent;
+        ctx.fillRect(lx, ly, tw + 10, 17);
+        ctx.fillStyle = C.accentInk;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, lx + 5, ly + 8.5);
       }
       ctx.restore();
     });
 
-    // 6. Render Ball with Glow
-    const ballPos = this.toCanvasCoords(this.currentBall.x, this.currentBall.y);
+    // Ball
+    const ballPos = this.toCanvasCoords(this.displayBall.x, this.displayBall.y);
+    const br = Math.max(4.5, w / 150);
     ctx.save();
-    ctx.shadowColor = "#00f2fe";
-    ctx.shadowBlur = 20;
-    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = rgba(C.accent, 0.75);
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(ballPos.x, ballPos.y, 7, 0, Math.PI * 2);
+    ctx.arc(ballPos.x, ballPos.y, br * 2.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(ballPos.x + 1.5, ballPos.y + 2.5, br, br * 0.7, 0, 0, Math.PI * 2);
     ctx.fill();
-
-    ctx.strokeStyle = "#00f2fe";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = C.bg;
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(ballPos.x, ballPos.y, 12, 0, Math.PI * 2);
+    ctx.arc(ballPos.x, ballPos.y, br, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
   }
 
-  renderTeamNodes(players, kitColor, secondaryColor) {
+  isHighlighted(p) {
+    const isActive = this.activePlayerNode && this.activePlayerNode.toLowerCase().includes(p.name.toLowerCase());
+    const isTargetSpotlight = this.currentPlayer && p.name.toLowerCase().includes(this.currentPlayer.toLowerCase());
+    return { isActive, isTargetSpotlight };
+  }
+
+  renderTeamNodes(players, kitColor, numberColor) {
     const ctx = this.ctx;
+    const r = Math.max(7, this.pitchW / 78);
     players.forEach((p) => {
       const pos = this.toCanvasCoords(p.x, p.y);
-      const isActive = this.activePlayerNode && this.activePlayerNode.toLowerCase().includes(p.name.toLowerCase());
-      const isTargetSpotlight = this.currentPlayer && p.name.toLowerCase().includes(this.currentPlayer.toLowerCase());
+      const { isActive, isTargetSpotlight } = this.isHighlighted(p);
 
       ctx.save();
       if (isActive || isTargetSpotlight) {
-        ctx.strokeStyle = "#00f2fe";
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = "#00f2fe";
-        ctx.shadowBlur = 14;
+        ctx.strokeStyle = isTargetSpotlight ? C.accent : "rgba(236,235,230,0.9)";
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 11, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      ctx.fillStyle = kitColor;
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
+      ctx.arc(pos.x + 1, pos.y + 2, r, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = secondaryColor;
-      ctx.font = "bold 8px Outfit";
+      ctx.fillStyle = kitColor;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = numberColor;
+      ctx.font = `700 ${Math.round(r * 1.25)}px ${FONT.display}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(p.num, pos.x, pos.y);
+      ctx.fillText(p.num, pos.x, pos.y + 0.5);
       ctx.restore();
     });
   }
@@ -814,44 +1024,21 @@ class OmniPitchApp {
     const badge = document.getElementById("lineup-home-formation-badge");
     if (badge) badge.textContent = fmt;
 
-    if (fmt === "4-2-3-1") {
-      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
-      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 22, y: 20 };
-      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 19, y: 40 };
-      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 60 };
-      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 22, y: 80 };
-      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 36, y: 38 };
-      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 36, y: 62 };
-      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 52, y: 50 };
-      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 54, y: 22 };
-      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 74, y: 50 };
-      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 54, y: 78 };
-    } else if (fmt === "3-5-2") {
-      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
-      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 19, y: 30 };
-      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 18, y: 50 };
-      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 70 };
-      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 36, y: 16 };
-      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 40, y: 40 };
-      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 40, y: 60 };
-      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 50, y: 50 };
-      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 36, y: 84 };
-      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 72, y: 40 };
-      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 72, y: 60 };
-    } else {
-      // Default 4-3-3
-      this.homeFormation[0] = { id: "AVA-01", name: "Marcus Vance", num: 1, role: "GK", x: 6, y: 50 };
-      this.homeFormation[1] = { id: "AVA-02", name: "Leo Sterling", num: 2, role: "DEF", x: 22, y: 20 };
-      this.homeFormation[2] = { id: "AVA-04", name: "Tobias Thorne", num: 4, role: "DEF", x: 19, y: 40 };
-      this.homeFormation[3] = { id: "AVA-05", name: "Dorian Cole", num: 5, role: "DEF", x: 19, y: 60 };
-      this.homeFormation[4] = { id: "AVA-03", name: "Nico Lind", num: 3, role: "DEF", x: 22, y: 80 };
-      this.homeFormation[5] = { id: "AVA-06", name: "Mateo Rios", num: 6, role: "MID", x: 38, y: 50 };
-      this.homeFormation[6] = { id: "AVA-08", name: "Julian Drake", num: 8, role: "MID", x: 48, y: 32 };
-      this.homeFormation[7] = { id: "AVA-10", name: "Kaelen Cross", num: 10, role: "MID", x: 48, y: 68 };
-      this.homeFormation[8] = { id: "AVA-07", name: "Finneas Frost", num: 7, role: "FWD", x: 70, y: 22 };
-      this.homeFormation[9] = { id: "AVA-09", name: "Cyrus Kane", num: 9, role: "FWD", x: 74, y: 50 };
-      this.homeFormation[10] = { id: "AVA-11", name: "Bram Walker", num: 11, role: "FWD", x: 70, y: 78 };
-    }
+    const layouts = {
+      "4-2-3-1": [[6, 50], [22, 20], [19, 40], [19, 60], [22, 80], [36, 38], [36, 62], [52, 50], [54, 22], [74, 50], [54, 78]],
+      "3-5-2": [[6, 50], [19, 30], [18, 50], [19, 70], [36, 16], [40, 40], [40, 60], [50, 50], [36, 84], [72, 40], [72, 60]],
+      "4-3-3": [[6, 50], [22, 20], [19, 40], [19, 60], [22, 80], [38, 50], [48, 32], [48, 68], [70, 22], [74, 50], [70, 78]],
+    };
+    // 3-5-2 pushes the left-back and right winger into wing-back roles
+    const roles = fmt === "3-5-2"
+      ? ["GK", "DEF", "DEF", "DEF", "MID", "MID", "MID", "MID", "MID", "FWD", "FWD"]
+      : ["GK", "DEF", "DEF", "DEF", "DEF", "MID", "MID", "MID", "FWD", "FWD", "FWD"];
+    const coords = layouts[fmt] || layouts["4-3-3"];
+    this.homeFormation.forEach((p, i) => {
+      p.x = coords[i][0];
+      p.y = coords[i][1];
+      p.role = roles[i];
+    });
     this.renderPitch();
   }
 
@@ -878,6 +1065,7 @@ class OmniPitchApp {
       this.renderLineupsRatings();
       this.renderShotMap();
       this.renderTimeline();
+      if (this.pitchMode === "formations") this.renderPitch();
     } catch (err) {
       console.warn("Match center overview fetch error:", err);
     }
@@ -885,125 +1073,199 @@ class OmniPitchApp {
 
   renderAttackMomentum() {
     const canvas = document.getElementById("momentum-canvas");
-    if (!canvas || !this.matchCenterData) return;
-    const ctx = canvas.getContext("2d");
+    if (!canvas || !canvas.offsetParent || !this.matchCenterData) return;
+    const { ctx, w, h } = fitCanvas(canvas);
     const pts = this.matchCenterData.attack_momentum || [];
-    const w = canvas.width;
-    const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    // Background & center zero line
-    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.fillRect(0, 0, w, h);
+    const padL = 44;
+    const padR = 12;
+    const padT = 14;
+    const padB = 28;
+    const plotW = w - padL - padR;
+    const half = (h - padT - padB) / 2;
+    const centerY = padT + half;
+    const lastMinute = pts.length ? pts[pts.length - 1].minute : 0;
+    const maxMin = Math.max(90, lastMinute);
+    const slotW = plotW / maxMin;
+    this.momGeom = { padL, slotW, maxMin, plotW };
 
-    const centerY = h / 2;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    const xFor = (m) => padL + (m / maxMin) * plotW;
+
+    // Gridlines
+    ctx.strokeStyle = C.gridLine;
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(40, centerY);
-    ctx.lineTo(w - 20, centerY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Minute markers every 15 min
-    ctx.fillStyle = "#64748b";
-    ctx.font = "10px JetBrains Mono";
-    ctx.textAlign = "center";
-    for (let m = 15; m <= 90; m += 15) {
-      const x = 40 + (m / 90) * (w - 70);
-      ctx.fillText(`${m}'`, x, centerY + 14);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+    [-1, -0.5, 0.5, 1].forEach((k) => {
       ctx.beginPath();
-      ctx.moveTo(x, 15);
-      ctx.lineTo(x, h - 15);
+      ctx.moveTo(padL, centerY - k * half);
+      ctx.lineTo(w - padR, centerY - k * half);
       ctx.stroke();
+    });
+
+    // Minute axis
+    ctx.font = `500 11px ${FONT.mono}`;
+    ctx.fillStyle = C.text3;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let m = 0; m <= maxMin; m += 15) {
+      ctx.fillText(m === 45 ? "HT" : `${m}'`, xFor(m), h - padB + 10);
     }
 
-    ctx.fillText("0", 25, centerY + 3);
+    // Half-time divider
+    ctx.save();
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = "rgba(236,235,230,0.18)";
+    ctx.beginPath();
+    ctx.moveTo(xFor(45), padT);
+    ctx.lineTo(xFor(45), h - padB);
+    ctx.stroke();
+    ctx.restore();
+
+    // Team side labels
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.font = `600 11px ${FONT.mono}`;
+    ctx.fillStyle = C.home;
+    ctx.fillText("AVA", 6, centerY - half / 2);
+    ctx.fillStyle = C.away;
+    ctx.fillText("SOL", 6, centerY + half / 2);
 
     if (!pts.length) {
-      ctx.fillStyle = "#64748b";
-      ctx.font = "600 13px Outfit";
+      ctx.strokeStyle = "rgba(236,235,230,0.22)";
+      ctx.beginPath();
+      ctx.moveTo(padL, centerY);
+      ctx.lineTo(w - padR, centerY);
+      ctx.stroke();
+      ctx.fillStyle = C.text3;
+      ctx.font = `500 13px ${FONT.mono}`;
       ctx.textAlign = "center";
-      ctx.fillText("Awaiting match kickoff — Dynamic momentum curve activates with live match stream", w / 2, centerY - 25);
+      ctx.fillText("Momentum builds once the match kicks off", padL + plotW / 2, centerY - 22);
       return;
     }
 
-    // Render bars
-    const totalSlots = Math.max(pts.length, 45);
-    const availableWidth = w - 70;
-    const barWidth = Math.max(availableWidth / totalSlots - 3, 4);
+    // Bars
+    const gap = slotW > 6 ? 2 : 1;
+    pts.forEach((pt) => {
+      const x = xFor(pt.minute - 1) + gap / 2;
+      const bw = Math.max(slotW - gap, 1);
+      const mag = Math.min(Math.abs(pt.value), 100) / 100;
+      const barH = mag * half;
+      const hovered = this.momentumHoverMinute === pt.minute;
+      const alpha = hovered ? 1 : 0.35 + 0.6 * mag;
 
-    pts.forEach((pt, idx) => {
-      const x = 40 + (idx / totalSlots) * availableWidth;
-      const barH = (Math.abs(pt.value) / 100.0) * (centerY - 30);
-
-      ctx.save();
       if (pt.value > 0) {
-        // Home dominance (Upward)
-        ctx.fillStyle = "#00f2fe";
-        ctx.shadowColor = "rgba(0, 242, 254, 0.5)";
-        ctx.shadowBlur = 6;
-        ctx.fillRect(x, centerY - barH, barWidth, barH);
+        ctx.fillStyle = rgba(C.home, alpha);
+        ctx.fillRect(x, centerY - barH, bw, barH);
       } else if (pt.value < 0) {
-        // Away dominance (Downward)
-        ctx.fillStyle = "#e11d48";
-        ctx.shadowColor = "rgba(225, 29, 72, 0.5)";
-        ctx.shadowBlur = 6;
-        ctx.fillRect(x, centerY, barWidth, barH);
-      } else {
-        // Neutral
-        ctx.fillStyle = "#334155";
-        ctx.fillRect(x, centerY - 2, barWidth, 4);
+        ctx.fillStyle = rgba(C.away, alpha);
+        ctx.fillRect(x, centerY, bw, barH);
       }
-      ctx.restore();
-
-      // Render incident icons if any
-      if (pt.incidents && pt.incidents.length > 0) {
-        pt.incidents.forEach((inc) => {
-          const iconY = pt.value >= 0 ? Math.max(centerY - barH - 14, 18) : Math.min(centerY + barH + 18, h - 8);
-          ctx.font = "13px sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(inc.icon || "⚽", x + barWidth / 2, iconY);
-        });
+      if (hovered) {
+        ctx.fillStyle = "rgba(236,235,230,0.06)";
+        ctx.fillRect(x - gap / 2, padT, slotW, h - padT - padB);
       }
     });
+
+    // Trend line (5-minute rolling mean)
+    ctx.save();
+    ctx.strokeStyle = "rgba(236,235,230,0.85)";
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    pts.forEach((pt, i) => {
+      const win = pts.slice(Math.max(0, i - 2), i + 3);
+      const avg = win.reduce((s, p) => s + p.value, 0) / win.length;
+      const x = xFor(pt.minute - 0.5);
+      const y = centerY - (Math.max(-100, Math.min(100, avg)) / 100) * half;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+
+    // Zero line
+    ctx.strokeStyle = "rgba(236,235,230,0.3)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, centerY);
+    ctx.lineTo(w - padR, centerY);
+    ctx.stroke();
+
+    // Incident markers
+    pts.forEach((pt) => {
+      if (!pt.incidents || !pt.incidents.length) return;
+      const cx = xFor(pt.minute - 0.5);
+      const barH = (Math.min(Math.abs(pt.value), 100) / 100) * half;
+      pt.incidents.forEach((inc, k) => {
+        const up = pt.value >= 0;
+        const cy = up ? Math.max(centerY - barH - 9 - k * 14, padT + 5) : Math.min(centerY + barH + 9 + k * 14, h - padB - 5);
+        this.drawIncidentMarker(ctx, inc.type, cx, cy);
+      });
+    });
+  }
+
+  drawIncidentMarker(ctx, type, x, y) {
+    ctx.save();
+    if (type === "goal") {
+      ctx.fillStyle = C.accent;
+      ctx.strokeStyle = C.bg;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (type === "card") {
+      ctx.fillStyle = "#ffd23f";
+      ctx.fillRect(x - 3.5, y - 5, 7, 10);
+    } else {
+      ctx.fillStyle = C.warn;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 5);
+      ctx.lineTo(x + 5, y + 4);
+      ctx.lineTo(x - 5, y + 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   handleMomentumHover(e) {
     const canvas = document.getElementById("momentum-canvas");
     const tip = document.getElementById("momentum-tooltip");
-    if (!canvas || !tip || !this.matchCenterData) return;
+    if (!canvas || !tip || !this.matchCenterData || !this.momGeom) return;
 
     const rect = canvas.getBoundingClientRect();
-    const mouseX = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const mx = e.clientX - rect.left;
     const pts = this.matchCenterData.attack_momentum || [];
     if (!pts.length) return;
 
-    const totalSlots = Math.max(pts.length, 45);
-    const availableWidth = canvas.width - 70;
-    const relX = mouseX - 40;
-    const idx = Math.floor((relX / availableWidth) * totalSlots);
+    const minute = Math.floor((mx - this.momGeom.padL) / this.momGeom.slotW) + 1;
+    const pt = pts.find((p) => p.minute === minute);
 
-    if (idx >= 0 && idx < pts.length) {
-      const pt = pts[idx];
-      const domName = pt.value > 5 ? "Avalon City FC" : (pt.value < -5 ? "Solaria Rovers" : "Neutral Contest");
-      let incidentText = "";
-      if (pt.incidents && pt.incidents.length > 0) {
-        incidentText = `<div style="color: #fbbf24; margin-top: 4px;">${pt.incidents.map(i => `${i.icon} ${i.player}`).join(', ')}</div>`;
+    if (pt) {
+      if (this.momentumHoverMinute !== minute) {
+        this.momentumHoverMinute = minute;
+        this.renderAttackMomentum();
       }
+      const domName = pt.value > 5 ? "Avalon City" : (pt.value < -5 ? "Solaria Rovers" : "Even");
+      const incidentText = pt.incidents && pt.incidents.length
+        ? `<div class="tt-inc">${pt.incidents.map((i) => `${esc(i.type.replace("_", " "))} — ${esc(i.player)}`).join("<br>")}</div>`
+        : "";
 
       tip.innerHTML = `
-        <div style="font-weight: 800; color: #00f2fe; margin-bottom: 2px;">Minute ${pt.minute}'</div>
-        <div>Dominance: <span style="color: #ffffff; font-weight: 600;">${domName}</span> (${pt.value > 0 ? '+' : ''}${pt.value})</div>
+        <div class="tt-title">Minute ${pt.minute}'</div>
+        <div>Dominance <b>${domName}</b> (${pt.value > 0 ? "+" : ""}${pt.value})</div>
         ${incidentText}
       `;
-      tip.style.left = `${Math.min(e.clientX - rect.left + 15, rect.width - 220)}px`;
-      tip.style.top = `${Math.min(e.clientY - rect.top + 10, rect.height - 60)}px`;
+      tip.style.left = `${Math.min(mx + 14, rect.width - 220)}px`;
+      tip.style.top = `${Math.min(e.clientY - rect.top + 12, rect.height - 70)}px`;
       tip.classList.remove("hidden");
     } else {
       tip.classList.add("hidden");
+      if (this.momentumHoverMinute !== null) {
+        this.momentumHoverMinute = null;
+        this.renderAttackMomentum();
+      }
     }
   }
 
@@ -1014,15 +1276,15 @@ class OmniPitchApp {
     if (!stats) return;
 
     const metrics = [
-      { key: "expected_goals", label: "Expected Goals (xG)", isFloat: true },
-      { key: "possession", label: "Ball Possession %", isFloat: true, suffix: "%" },
-      { key: "total_shots", label: "Total Shots" },
-      { key: "shots_on_target", label: "Shots on Target" },
-      { key: "big_chances", label: "Big Chances" },
-      { key: "big_chances_missed", label: "Big Chances Missed" },
-      { key: "accurate_passes", label: "Accurate Passes", customVal: true },
-      { key: "corners", label: "Corner Kicks" },
-      { key: "tackles_won", label: "Tackles Won", customVal: true },
+      { key: "expected_goals", label: "Expected goals (xG)", isFloat: true },
+      { key: "possession", label: "Possession", isFloat: true, suffix: "%" },
+      { key: "total_shots", label: "Shots" },
+      { key: "shots_on_target", label: "Shots on target" },
+      { key: "big_chances", label: "Big chances" },
+      { key: "big_chances_missed", label: "Big chances missed" },
+      { key: "accurate_passes", label: "Accurate passes", customVal: true },
+      { key: "corners", label: "Corners" },
+      { key: "tackles_won", label: "Tackles won", customVal: true },
       { key: "fouls", label: "Fouls" },
     ];
 
@@ -1031,8 +1293,8 @@ class OmniPitchApp {
       let homeDisplay = data.home;
       let awayDisplay = data.away;
 
-      let homeVal = typeof data.home === "number" ? data.home : parseFloat(data.home);
-      let awayVal = typeof data.away === "number" ? data.away : parseFloat(data.away);
+      const homeVal = typeof data.home === "number" ? data.home : parseFloat(data.home);
+      const awayVal = typeof data.away === "number" ? data.away : parseFloat(data.away);
 
       if (m.isFloat) {
         if (typeof data.home === "number") homeDisplay = data.home.toFixed(2);
@@ -1060,13 +1322,13 @@ class OmniPitchApp {
       return `
         <div class="h2h-stat-row">
           <div class="h2h-values">
-            <span class="h2h-val-home ${isHomeLeader ? 'leader' : ''}">${homeDisplay}</span>
+            <span class="h2h-val-home ${isHomeLeader ? "leader" : ""}">${esc(homeDisplay)}</span>
             <span class="h2h-label">${m.label}</span>
-            <span class="h2h-val-away ${isAwayLeader ? 'leader' : ''}">${awayDisplay}</span>
+            <span class="h2h-val-away ${isAwayLeader ? "leader" : ""}">${esc(awayDisplay)}</span>
           </div>
           <div class="h2h-bar-track">
-            <div class="h2h-bar-home ${isHomeLeader ? 'leader' : ''}" style="width: ${homePct}%;"></div>
-            <div class="h2h-bar-away ${isAwayLeader ? 'leader' : ''}" style="width: ${awayPct}%;"></div>
+            <div class="h2h-half home"><div class="h2h-bar-home ${isHomeLeader ? "leader" : ""}" style="width: ${total > 0 ? homePct : 0}%;"></div></div>
+            <div class="h2h-half away"><div class="h2h-bar-away ${isAwayLeader ? "leader" : ""}" style="width: ${total > 0 ? awayPct : 0}%;"></div></div>
           </div>
         </div>
       `;
@@ -1082,14 +1344,14 @@ class OmniPitchApp {
     const renderPlayers = (players) => {
       return players.map((p) => {
         const ratingClass = p.rating_color === "green" ? "rating-green" : (p.rating_color === "red" ? "rating-red" : "rating-orange");
-        const mvpBadge = p.is_mvp ? `<span class="mvp-badge">⭐ MVP</span>` : "";
+        const mvpBadge = p.is_mvp ? `<span class="mvp-badge"><svg class="ic"><use href="#i-star"/></svg>MVP</span>` : "";
 
         return `
-          <div class="player-rating-card" onclick="window.omniPitch.openPlayerModal('${p.player_id || ''}', '${p.name}')" title="Click to view ${p.name}'s Sporting CV & Scouting Dossier" style="cursor: pointer;">
+          <div class="player-rating-card" data-player-id="${esc(p.player_id || "")}" data-player-name="${esc(p.name)}" title="Open ${esc(p.name)}'s dossier" style="cursor: pointer;">
             <div class="player-info-left">
               <span class="player-jersey-badge">${p.number}</span>
-              <span class="player-pos-badge">${p.position}</span>
-              <span class="player-rating-name">${p.name}</span>
+              <span class="player-pos-badge">${esc(p.position)}</span>
+              <span class="player-rating-name">${esc(p.name)}</span>
             </div>
             <div class="player-rating-right">
               ${mvpBadge}
@@ -1102,6 +1364,12 @@ class OmniPitchApp {
 
     homeList.innerHTML = renderPlayers(this.matchCenterData.lineups.home || []);
     awayList.innerHTML = renderPlayers(this.matchCenterData.lineups.away || []);
+
+    [homeList, awayList].forEach((list) => {
+      list.querySelectorAll(".player-rating-card").forEach((card) => {
+        card.addEventListener("click", () => this.openPlayerModal(card.dataset.playerId, card.dataset.playerName));
+      });
+    });
   }
 
   selectSpotlightPlayer(name) {
@@ -1120,100 +1388,138 @@ class OmniPitchApp {
         sel.add(opt);
       }
       this.currentPlayer = name;
+      this.renderPitch();
       if (this.isStreaming) this.restartStream();
     }
   }
 
+  /**
+   * Shots are mirrored so every attempt attacks the same goal, then drawn on a
+   * vertical final-40m view (goal at the top) at true pitch proportions.
+   */
+  shotToCanvas(shot, geom) {
+    const x = shot.is_home === false ? 100 - shot.x : shot.x;
+    const y = shot.is_home === false ? 100 - shot.y : shot.y;
+    const depth = Math.min(Math.max(105 - (x / 100) * 105, 0), geom.depth - 1);
+    return {
+      x: geom.x + (y / 100) * 68 * geom.s,
+      y: geom.y + depth * geom.s,
+    };
+  }
+
   renderShotMap() {
     const canvas = document.getElementById("shotmap-canvas");
-    if (!canvas || !this.matchCenterData) return;
-    const ctx = canvas.getContext("2d");
+    if (!canvas || !canvas.offsetParent || !this.matchCenterData) return;
+    const { ctx, w, h } = fitCanvas(canvas);
     const shots = this.matchCenterData.shot_map || [];
-    const w = canvas.width;
-    const h = canvas.height;
-
     ctx.clearRect(0, 0, w, h);
 
-    // Draw football pitch penalty half
-    ctx.fillStyle = "#0c2016";
+    // Final 40 m of a 68 m-wide pitch, goal at the top
+    const depth = 40;
+    const s = Math.min((w - 24) / 68, (h - 18) / (depth + 2.2));
+    const fw = 68 * s;
+    const fh = depth * s;
+    const geom = { x: (w - fw) / 2, y: h - fh, s, depth };
+    this.shotGeom = geom;
+    const cx = geom.x + fw / 2;
+    const gy = geom.y;
+
+    ctx.fillStyle = C.grassOut;
     ctx.fillRect(0, 0, w, h);
+    const stripes = 8;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 === 0 ? C.grassA : C.grassB;
+      ctx.fillRect(geom.x, gy + (i * fh) / stripes, fw, fh / stripes + 0.5);
+    }
 
-    // Pitch markings
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-    ctx.lineWidth = 2;
-
-    // Outer boundary
-    ctx.strokeRect(30, 30, w - 60, h - 60);
-
-    // Goal mouth
-    ctx.strokeRect(w - 30, h / 2 - 50, 18, 100);
-
-    // Penalty Area
-    ctx.strokeRect(w - 240, h / 2 - 140, 210, 280);
-
-    // 6-yard Box
-    ctx.strokeRect(w - 100, h / 2 - 70, 70, 140);
-
-    // Penalty Spot
-    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = C.line;
+    ctx.fillStyle = C.line;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.arc(w - 140, h / 2, 3, 0, Math.PI * 2);
+    ctx.moveTo(geom.x, h);
+    ctx.lineTo(geom.x, gy);
+    ctx.lineTo(geom.x + fw, gy);
+    ctx.lineTo(geom.x + fw, h);
+    ctx.stroke();
+    ctx.strokeRect(cx - 20.16 * s, gy, 40.32 * s, 16.5 * s);
+    ctx.strokeRect(cx - 9.16 * s, gy, 18.32 * s, 5.5 * s);
+    ctx.strokeRect(cx - 3.66 * s, gy - 2 * s, 7.32 * s, 2 * s);
+    ctx.beginPath();
+    ctx.arc(cx, gy + 11 * s, 2, 0, Math.PI * 2);
     ctx.fill();
-
-    // Penalty Arc
+    const arcA = Math.asin((16.5 - 11) / 9.15);
     ctx.beginPath();
-    ctx.arc(w - 140, h / 2, 55, Math.PI * 0.65, Math.PI * 1.35);
+    ctx.arc(cx, gy + 11 * s, 9.15 * s, arcA, Math.PI - arcA);
     ctx.stroke();
 
-    // Render Shots
-    shots.forEach((s) => {
-      const sx = 30 + (s.x / 100.0) * (w - 70);
-      const sy = 30 + (s.y / 100.0) * (h - 60);
-      const r = Math.max((s.xg || 0.1) * 22, 5);
+    // Distance guides
+    ctx.font = `500 10px ${FONT.mono}`;
+    ctx.fillStyle = "rgba(236,235,230,0.4)";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    [20, 30].forEach((m) => {
+      ctx.fillText(`${m}m`, geom.x + fw - 6, gy + m * s);
+      ctx.fillRect(geom.x + fw - 4, gy + m * s, 4, 1);
+    });
+
+    if (!shots.length) {
+      ctx.fillStyle = "rgba(236,235,230,0.55)";
+      ctx.font = `500 13px ${FONT.mono}`;
+      ctx.textAlign = "center";
+      ctx.fillText("No shots yet", cx, gy + 28 * s);
+    }
+
+    // Shots — bigger circle, bigger chance
+    shots.forEach((shot) => {
+      const p = this.shotToCanvas(shot, geom);
+      const r = Math.max(Math.sqrt(shot.xg || 0.05) * 26, 5);
+      const team = shot.is_home === false ? C.away : C.home;
 
       ctx.save();
-      if (s.outcome === "goal") {
-        ctx.fillStyle = "#10b981";
-        ctx.shadowColor = "#10b981";
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 9px JetBrains Mono";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("⚽", sx, sy);
-      } else if (s.outcome === "saved") {
-        ctx.fillStyle = "#00f2fe";
-        ctx.shadowColor = "#00f2fe";
-        ctx.shadowBlur = 8;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.strokeStyle = "#94a3b8";
+      if (shot.outcome === "goal") {
+        ctx.fillStyle = C.accent;
+        ctx.strokeStyle = C.bg;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = team;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (shot.outcome === "saved") {
+        ctx.fillStyle = rgba(team, 0.25);
+        ctx.strokeStyle = team;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = rgba(team, 0.75);
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.restore();
     });
 
-    // Update Shot Map Summary Sidebar
+    // Summary sidebar
     const summary = document.getElementById("shotmap-summary");
     if (summary) {
-      const goals = shots.filter(s => s.outcome === "goal").length;
-      const totalXg = shots.reduce((sum, s) => sum + (s.xg || 0), 0).toFixed(2);
+      const goals = shots.filter((sh) => sh.outcome === "goal").length;
+      const totalXg = shots.reduce((sum, sh) => sum + (sh.xg || 0), 0).toFixed(2);
       const conversion = shots.length > 0 ? Math.round((goals / shots.length) * 100) : 0;
 
       summary.innerHTML = `
-        <div class="stat-pill"><span class="stat-num">${shots.length}</span><span class="stat-lbl">Total Shots</span></div>
-        <div class="stat-pill"><span class="stat-num" style="color: #10b981;">${goals}</span><span class="stat-lbl">Goals Scored</span></div>
-        <div class="stat-pill"><span class="stat-num" style="color: #00f2fe;">${totalXg}</span><span class="stat-lbl">Total xG Created</span></div>
-        <div class="stat-pill"><span class="stat-num">${conversion}%</span><span class="stat-lbl">Conversion Rate</span></div>
+        <div class="stat-pill"><span class="stat-num">${shots.length}</span><span class="stat-lbl">Shots</span></div>
+        <div class="stat-pill"><span class="stat-num accent">${goals}</span><span class="stat-lbl">Goals</span></div>
+        <div class="stat-pill"><span class="stat-num">${totalXg}</span><span class="stat-lbl">Total xG</span></div>
+        <div class="stat-pill"><span class="stat-num">${conversion}%</span><span class="stat-lbl">Conversion</span></div>
       `;
     }
   }
@@ -1221,34 +1527,31 @@ class OmniPitchApp {
   handleShotMapHover(e) {
     const canvas = document.getElementById("shotmap-canvas");
     const tip = document.getElementById("shotmap-tooltip");
-    if (!canvas || !tip || !this.matchCenterData) return;
+    if (!canvas || !tip || !this.matchCenterData || !this.shotGeom) return;
 
     const rect = canvas.getBoundingClientRect();
-    const mx = ((e.clientX - rect.left) / rect.width) * canvas.width;
-    const my = ((e.clientY - rect.top) / rect.height) * canvas.height;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
     const shots = this.matchCenterData.shot_map || [];
 
-    const w = canvas.width;
-    const h = canvas.height;
-
-    const hovered = shots.find((s) => {
-      const sx = 30 + (s.x / 100.0) * (w - 70);
-      const sy = 30 + (s.y / 100.0) * (h - 60);
-      const dist = Math.hypot(mx - sx, my - sy);
-      return dist <= Math.max((s.xg || 0.1) * 22, 10);
+    const hovered = shots.find((shot) => {
+      const p = this.shotToCanvas(shot, this.shotGeom);
+      return Math.hypot(mx - p.x, my - p.y) <= Math.max(Math.sqrt(shot.xg || 0.05) * 26, 10);
     });
 
     if (hovered) {
       tip.innerHTML = `
-        <div style="font-weight: 800; color: #00f2fe;">${hovered.player_name} (${hovered.minute}')</div>
-        <div>Outcome: <b style="text-transform: uppercase;">${hovered.outcome}</b></div>
-        <div>xG: <b>${(hovered.xg || 0).toFixed(2)}</b> &bull; Speed: <b>${hovered.shot_speed_kmh} km/h</b></div>
+        <div class="tt-title">${esc(hovered.player_name)} · ${hovered.minute}'</div>
+        <div>Outcome <b>${esc(hovered.outcome)}</b></div>
+        <div>xG <b>${(hovered.xg || 0).toFixed(2)}</b> · <b>${hovered.shot_speed_kmh ?? "—"}</b> km/h</div>
       `;
-      tip.style.left = `${Math.min(e.clientX - rect.left + 15, rect.width - 200)}px`;
-      tip.style.top = `${Math.min(e.clientY - rect.top + 10, rect.height - 70)}px`;
+      tip.style.left = `${Math.min(mx + 14, rect.width - 200)}px`;
+      tip.style.top = `${Math.min(my + 12, rect.height - 80)}px`;
       tip.classList.remove("hidden");
+      canvas.style.cursor = "pointer";
     } else {
       tip.classList.add("hidden");
+      canvas.style.cursor = "default";
     }
   }
 
@@ -1257,22 +1560,23 @@ class OmniPitchApp {
     if (!list || !this.matchCenterData) return;
     const timeline = this.matchCenterData.timeline || [];
 
+    list.classList.toggle("is-empty", !timeline.length);
     if (!timeline.length) {
-      list.innerHTML = `<div style="text-align: center; color: #64748b; padding: 20px;">No incidents recorded yet. Awaiting match stream kickoff.</div>`;
+      list.innerHTML = `<div class="empty-state">No incidents yet. Goals and fouls appear here as the match unfolds.</div>`;
       return;
     }
 
     list.innerHTML = timeline.map((item) => {
       const sideClass = item.is_home ? "home" : "away";
-      const icon = item.type === "goal" ? "⚽" : (item.type === "card" ? "🟨" : "⚡");
+      const iconClass = item.type === "goal" ? "ti-goal" : (item.type === "card" || item.type === "foul" ? "ti-card" : "ti-chance");
 
       return `
         <div class="timeline-event-card ${sideClass}">
           <span class="timeline-minute">${item.minute}'</span>
-          <span class="timeline-icon">${icon}</span>
+          <span class="timeline-icon"><span class="${iconClass}"></span></span>
           <div class="timeline-details">
-            <span class="timeline-title">${item.title}</span>
-            <span class="timeline-desc">${item.detail}</span>
+            <span class="timeline-title">${esc(item.title)}</span>
+            <span class="timeline-desc">${esc(item.detail)}</span>
           </div>
         </div>
       `;
@@ -1314,44 +1618,17 @@ class OmniPitchApp {
   }
 
   renderTacticalFormations(ctx, w, h) {
-    const pad = 24;
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, 0, w, h);
 
-    // Pitch Boundary & Lines
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
-
-    // Halfway line & center circle
-    const midX = w / 2;
-    ctx.beginPath();
-    ctx.moveTo(midX, pad);
-    ctx.lineTo(midX, h - pad);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(midX, h / 2, 54, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Penalty Boxes
-    const boxW = 80;
-    const boxH = 160;
-    const boxY = (h - boxH) / 2;
-    ctx.strokeRect(pad, boxY, boxW, boxH);
-    ctx.strokeRect(w - pad - boxW, boxY, boxW, boxH);
-
-    // Tactical Unit Connecting Lines (Defenders, Midfielders, Forwards)
+    // Tactical unit connecting lines (defence, midfield, attack)
     const drawUnitLines = (players, color) => {
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 4]);
-
-      // Group by role
-      const defs = players.filter(p => p.role === "DEF");
-      const mids = players.filter(p => p.role === "MID");
-      const fwds = players.filter(p => p.role === "FWD");
-
-      [defs, mids, fwds].forEach(unit => {
+      ["DEF", "MID", "FWD"].forEach((role) => {
+        const unit = players.filter((p) => p.role === role).sort((a, b) => a.y - b.y);
         if (unit.length > 1) {
           ctx.beginPath();
           unit.forEach((p, idx) => {
@@ -1365,100 +1642,95 @@ class OmniPitchApp {
       ctx.restore();
     };
 
-    drawUnitLines(this.homeFormation, "rgba(0, 163, 224, 0.45)");
-    drawUnitLines(this.awayFormation, "rgba(225, 29, 72, 0.45)");
+    drawUnitLines(this.homeFormation, rgba(C.home, 0.55));
+    drawUnitLines(this.awayFormation, rgba(C.away, 0.55));
 
-    // Banner watermark
-    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
-    ctx.font = "600 11px Outfit";
+    // Formation labels
+    ctx.font = `700 ${Math.round(w / 40)}px ${FONT.display}`;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = C.home;
+    ctx.textAlign = "left";
+    ctx.fillText(`AVA ${this.currentFormation}`, this.field.x + 10, this.field.y + 8);
+    ctx.fillStyle = C.away;
+    ctx.textAlign = "right";
+    ctx.fillText("4-3-3 SOL", this.field.x + this.field.w - 10, this.field.y + 8);
+
+    ctx.font = `500 ${Math.max(9, Math.round(w / 95))}px ${FONT.mono}`;
+    ctx.fillStyle = "rgba(236,235,230,0.55)";
     ctx.textAlign = "center";
-    ctx.fillText("TACTICAL HEAD-TO-HEAD FORMATIONS • CLICK ANY PLAYER TO VIEW SPORTING CV & STATS", w / 2, 16);
+    ctx.textBaseline = "bottom";
+    ctx.fillText("CLICK A PLAYER FOR THE FULL DOSSIER", w / 2, this.field.y + this.field.h - 8);
 
-    // Render Players for both teams
-    const renderFormationXI = (players, kitColor, secondaryColor, teamName) => {
+    const lineup = this.matchCenterData && this.matchCenterData.lineups
+      ? [...(this.matchCenterData.lineups.home || []), ...(this.matchCenterData.lineups.away || [])]
+      : [];
+
+    const r = Math.max(10, w / 64);
+    // Away plates sit above the node so mirrored opponents on the same line don't collide
+    const renderFormationXI = (players, kitColor, numberColor, plateAbove) => {
       players.forEach((p) => {
         const pos = this.toCanvasCoords(p.x, p.y);
-        const isActive = this.activePlayerNode && this.activePlayerNode.toLowerCase().includes(p.name.toLowerCase());
-        const isTargetSpotlight = this.currentPlayer && p.name.toLowerCase().includes(this.currentPlayer.toLowerCase());
-
-        // Find live rating if available
-        let ratingVal = null;
-        let ratingColor = "orange";
-        if (this.matchCenterData && this.matchCenterData.lineups) {
-          const allLineup = [...(this.matchCenterData.lineups.home || []), ...(this.matchCenterData.lineups.away || [])];
-          const matched = allLineup.find(lp => lp.player_id === p.id || lp.name.toLowerCase() === p.name.toLowerCase());
-          if (matched) {
-            ratingVal = matched.rating;
-            ratingColor = matched.rating_color;
-          }
-        }
+        const { isActive, isTargetSpotlight } = this.isHighlighted(p);
+        const matched = lineup.find((lp) => lp.player_id === p.id || lp.name.toLowerCase() === p.name.toLowerCase());
 
         ctx.save();
 
-        // Glowing halo if active or spotlight target
         if (isActive || isTargetSpotlight) {
-          ctx.strokeStyle = "#00f2fe";
-          ctx.lineWidth = 3;
-          ctx.shadowColor = "#00f2fe";
-          ctx.shadowBlur = 18;
+          ctx.strokeStyle = isTargetSpotlight ? C.accent : "rgba(236,235,230,0.9)";
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y, 18, 0, Math.PI * 2);
+          ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
           ctx.stroke();
         }
 
-        // Tactical node body
-        ctx.fillStyle = kitColor;
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 13, 0, Math.PI * 2);
+        ctx.arc(pos.x + 1, pos.y + 2, r, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        ctx.fillStyle = kitColor;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fill();
 
-        // Jersey number
-        ctx.fillStyle = secondaryColor;
-        ctx.font = "bold 10px Outfit";
+        ctx.fillStyle = numberColor;
+        ctx.font = `800 ${Math.round(r * 1.15)}px ${FONT.display}`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(p.num, pos.x, pos.y);
+        ctx.fillText(p.num, pos.x, pos.y + 0.5);
 
-        // Role badge above
-        ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-        ctx.fillRect(pos.x - 12, pos.y - 25, 24, 10);
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = "bold 7px JetBrains Mono";
-        ctx.fillText(p.role, pos.x, pos.y - 20);
+        // Name plate (+ live rating)
+        const surname = p.name.split(" ").slice(-1)[0].toUpperCase();
+        ctx.font = `700 ${Math.max(10, Math.round(r * 0.9))}px ${FONT.display}`;
+        const nameW = ctx.measureText(surname).width;
+        const ratingW = matched ? 26 : 0;
+        const plateW = nameW + 10 + ratingW;
+        const plateH = Math.max(14, r * 1.1);
+        const px = pos.x - plateW / 2;
+        const py = plateAbove ? pos.y - r - 5 - plateH : pos.y + r + 5;
 
-        // Name plate below
-        const surname = p.name.split(" ").slice(-1)[0];
-        ctx.font = "600 9px Outfit";
-        const nameWidth = ctx.measureText(surname).width;
-        ctx.fillStyle = "rgba(8, 14, 25, 0.85)";
-        ctx.fillRect(pos.x - nameWidth / 2 - 4, pos.y + 16, nameWidth + 8, 13);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(pos.x - nameWidth / 2 - 4, pos.y + 16, nameWidth + 8, 13);
+        ctx.fillStyle = "rgba(11,12,14,0.88)";
+        ctx.fillRect(px, py, plateW, plateH);
+        ctx.fillStyle = C.text;
+        ctx.textAlign = "left";
+        ctx.fillText(surname, px + 5, py + plateH / 2 + 0.5);
 
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(surname, pos.x, pos.y + 22.5);
-
-        // Dynamic Rating Pill next to name if available
-        if (ratingVal !== null) {
-          const pillColor = ratingColor === "green" ? "#10b981" : (ratingColor === "red" ? "#ef4444" : "#f59e0b");
+        if (matched) {
+          const pillColor = matched.rating_color === "green" ? C.good : (matched.rating_color === "red" ? C.bad : C.warn);
           ctx.fillStyle = pillColor;
-          ctx.fillRect(pos.x + nameWidth / 2 + 6, pos.y + 16, 18, 13);
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "bold 8px JetBrains Mono";
-          ctx.fillText(ratingVal.toFixed(1), pos.x + nameWidth / 2 + 15, pos.y + 22.5);
+          ctx.fillRect(px + plateW - ratingW, py, ratingW, plateH);
+          ctx.fillStyle = C.bg;
+          ctx.font = `600 ${Math.max(9, Math.round(r * 0.72))}px ${FONT.mono}`;
+          ctx.textAlign = "center";
+          ctx.fillText(matched.rating.toFixed(1), px + plateW - ratingW / 2, py + plateH / 2 + 0.5);
         }
 
         ctx.restore();
       });
     };
 
-    renderFormationXI(this.homeFormation, "#00A3E0", "#ffffff", "Avalon City FC");
-    renderFormationXI(this.awayFormation, "#e11d48", "#FFD100", "Solaria Rovers");
+    renderFormationXI(this.homeFormation, C.home, "#04131f", false);
+    renderFormationXI(this.awayFormation, C.away, "#1f0604", true);
   }
 
   /* ==============================================================================
@@ -1476,76 +1748,92 @@ class OmniPitchApp {
         fetch(`/api/teams/${this.currentModalTeamId}`),
       ]);
 
-      if (!standingsRes.ok || !teamRes.ok) return;
+      if (!standingsRes.ok) return;
 
-      const standings = await standingsRes.json();
-      const team = await teamRes.json();
+      const league = await standingsRes.json();
+      const table = league.standings || [];
+      // Only the two match clubs have full profiles; others fall back to their table row
+      const team = teamRes.ok ? await teamRes.json() : null;
+      const row = table.find((club) => club.team_id === this.currentModalTeamId) || {};
+      const teamColor = this.currentModalTeamId === "avalon_city" ? C.home : (this.currentModalTeamId === "solaria_rovers" ? C.away : (row.primary_color || C.text3));
 
       // Populate Header
-      document.getElementById("modal-team-name").textContent = team.name;
-      document.getElementById("modal-team-meta").textContent = `${team.stadium} (${team.capacity.toLocaleString()} seats) • Founded ${team.founded}`;
+      document.getElementById("modal-team-name").textContent = team ? team.name : row.team_name;
+      document.getElementById("modal-team-meta").textContent = team
+        ? `${team.nickname} · ${team.stadium} (${team.stadium_capacity.toLocaleString()}) · Founded ${team.founded}`
+        : `${league.league_name} · ${row.rank}${["st", "nd", "rd"][row.rank - 1] || "th"} place`;
       const colorBox = document.getElementById("modal-team-color-box");
-      if (colorBox) {
-        colorBox.style.background = this.currentModalTeamId === "avalon_city" ? "#00A3E0" : "#e11d48";
-      }
+      if (colorBox) colorBox.style.background = teamColor;
 
       // Populate Standings Table
       const tbody = document.getElementById("standings-tbody");
       if (tbody) {
-        tbody.innerHTML = standings.map((club) => {
+        const zoneClass = { champions_league: "zone-cl", europa_league: "zone-el", relegation: "zone-rel" };
+        tbody.innerHTML = table.map((club) => {
           const isSelected = club.team_id === this.currentModalTeamId;
-          const isMatch = club.team_id === "avalon_city" || club.team_id === "solaria_rovers";
           const formDots = (club.form || []).map((f) => {
             const cls = f === "W" ? "form-w" : (f === "D" ? "form-d" : "form-l");
-            return `<span class="form-dot ${cls}">${f}</span>`;
+            return `<span class="form-dot ${cls}">${esc(f)}</span>`;
           }).join("");
 
           return `
-            <tr class="${isMatch ? 'current-match-team' : ''}" style="${isSelected ? 'background: rgba(0, 242, 254, 0.16);' : ''}">
-              <td><b>${club.rank}</b></td>
-              <td style="font-weight: 700; cursor: pointer; color: ${isSelected ? '#00f2fe' : '#ffffff'};" onclick="window.omniPitch.openTeamModal('${club.team_id}')" title="Inspect club profile">
-                ${club.team_name}
-              </td>
+            <tr class="${zoneClass[club.zone] || ""} ${club.is_current_match ? "current-match-team" : ""} ${isSelected ? "is-selected" : ""}">
+              <td>${club.rank}</td>
+              <td class="club-col" data-team-id="${esc(club.team_id)}" title="Open club">${esc(club.team_name)}</td>
               <td>${club.played}</td>
               <td>${club.won}</td>
               <td>${club.drawn}</td>
               <td>${club.lost}</td>
               <td>${club.goals_for}</td>
               <td>${club.goals_against}</td>
-              <td>${club.goal_diff > 0 ? '+' : ''}${club.goal_diff}</td>
-              <td style="font-weight: 800; color: #00f2fe;">${club.points}</td>
+              <td>${club.goal_difference > 0 ? "+" : ""}${club.goal_difference}</td>
+              <td class="pts-col">${club.points}</td>
               <td><div class="form-badge-group">${formDots}</div></td>
             </tr>
           `;
         }).join("");
+        tbody.querySelectorAll(".club-col").forEach((cell) => {
+          cell.addEventListener("click", () => this.openTeamModal(cell.dataset.teamId));
+        });
       }
 
       // Populate Club Profile
+      const profTab = document.querySelector('#team-modal .modal-tab-btn[data-modaltab="team-tab-profile"]');
+      if (profTab) {
+        profTab.classList.toggle("hidden", !team);
+        if (!team) document.querySelector('#team-modal .modal-tab-btn[data-modaltab="team-tab-standings"]').click();
+      }
+
       const profContainer = document.getElementById("team-profile-content");
-      if (profContainer) {
+      if (profContainer && team) {
+        const st = team.season_stats || {};
         const recentRows = (team.recent_matches || []).map((m) => {
-          const resClass = m.result === "W" ? "form-w" : (m.result === "D" ? "form-d" : "form-l");
+          const resClass = m.outcome === "W" ? "form-w" : (m.outcome === "D" ? "form-d" : "form-l");
           return `
             <div class="stat-metric-row">
-              <span class="metric-lbl">vs ${m.opponent} (${m.competition})</span>
-              <span class="metric-val"><span class="form-dot ${resClass}">${m.result}</span> ${m.score}</span>
+              <span class="metric-lbl">vs ${esc(m.opponent)} <span class="cell-num">${esc(m.venue)}</span></span>
+              <span class="metric-val"><span class="mono">${esc(m.result)}</span><span class="form-dot ${resClass}">${esc(m.outcome)}</span></span>
             </div>
           `;
         }).join("");
+        const traits = (team.tactical_traits || []).map((t) => `<li>${esc(t)}</li>`).join("");
 
         profContainer.innerHTML = `
           <div class="profile-card-block">
-            <h4>Tactical DNA & Philosophy</h4>
-            <div class="stat-metric-row"><span class="metric-lbl">Head Coach / Manager:</span><span class="metric-val">${team.manager}</span></div>
-            <div class="stat-metric-row"><span class="metric-lbl">Team Captain:</span><span class="metric-val">${team.captain}</span></div>
-            <div class="stat-metric-row"><span class="metric-lbl">Tactical System:</span><span class="metric-val" style="color: #00f2fe;">${team.tactical_style}</span></div>
-            <div class="stat-metric-row"><span class="metric-lbl">Preferred Formation:</span><span class="metric-val">${team.preferred_formation}</span></div>
-            <div class="stat-metric-row"><span class="metric-lbl">PPDA Pressing Index:</span><span class="metric-val">${team.ppda} (Suffocating Press)</span></div>
-            <div class="stat-metric-row"><span class="metric-lbl">Home Stadium:</span><span class="metric-val">${team.stadium}</span></div>
+            <h4>Tactical identity</h4>
+            <div class="stat-metric-row"><span class="metric-lbl">Head coach</span><span class="metric-val">${esc(team.head_coach)}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">System</span><span class="metric-val accent">${esc(team.tactical_system)}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Season record</span><span class="metric-val">${esc(team.season_record)}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Goals for / against</span><span class="metric-val">${st.goals_scored} / ${st.goals_conceded}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Possession · PPDA</span><span class="metric-val">${st.avg_possession}% · ${st.ppda}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Top scorer</span><span class="metric-val">${esc(st.top_scorer)}</span></div>
+            <div class="stat-metric-row"><span class="metric-lbl">Top assister</span><span class="metric-val">${esc(st.top_assister)}</span></div>
           </div>
           <div class="profile-card-block">
-            <h4>Recent Results & Form Guide</h4>
+            <h4>Recent results</h4>
             ${recentRows}
+            <h4 class="traits-title">Tactical traits</h4>
+            <ul class="traits-list">${traits}</ul>
           </div>
         `;
       }
@@ -1579,7 +1867,11 @@ class OmniPitchApp {
       this.activeModalPlayerName = data.name;
 
       // Header Identity
-      document.getElementById("modal-player-num").textContent = `#${data.number}`;
+      const photoEl = document.getElementById("modal-player-photo");
+      const photo = PLAYER_PHOTOS[data.player_id];
+      photoEl.classList.toggle("hidden", !photo);
+      photoEl.style.backgroundImage = photo ? `url("${photo}")` : "";
+      document.getElementById("modal-player-num").textContent = data.number;
       document.getElementById("modal-player-pos").textContent = data.position;
       document.getElementById("modal-player-team").textContent = data.club_name;
       document.getElementById("modal-player-name").textContent = data.name;
@@ -1601,17 +1893,15 @@ class OmniPitchApp {
       if (clubsList) {
         clubsList.innerHTML = (data.career.trajectory || []).map((c) => `
           <div class="club-trajectory-row">
-            <span><b>${c.period}</b>: ${c.club}</span>
-            <span style="color: #94a3b8;">${c.appearances} apps (${c.goals} goals)</span>
+            <span><span class="cell-num">${esc(c.period)}</span>&nbsp; ${esc(c.club)}</span>
+            <span class="muted">${c.appearances} apps · ${c.goals} gls</span>
           </div>
         `).join("");
       }
 
       const honorsList = document.getElementById("cv-honors-list");
       if (honorsList) {
-        honorsList.innerHTML = (data.career.honours || []).map((h) => `
-          <span class="honor-tag">${h}</span>
-        `).join("");
+        honorsList.innerHTML = (data.career.honours || []).map((hn) => `<span class="honor-tag">${esc(hn)}</span>`).join("");
       }
 
       document.getElementById("cv-scouting-text").textContent = data.scouting_summary;
@@ -1624,27 +1914,27 @@ class OmniPitchApp {
         liveContainer.innerHTML = `
           <div class="metric-card-mini">
             <span class="num"><span class="pro-rating-pill ${ratingCls}">${(live.rating || 6.5).toFixed(1)}</span></span>
-            <span class="lbl">Live Rating</span>
+            <span class="lbl">Live rating</span>
           </div>
           <div class="metric-card-mini">
-            <span class="num" style="color: #00f2fe;">${live.distance_km || 0.0} km</span>
-            <span class="lbl">Distance Covered</span>
+            <span class="num">${live.distance_km || 0.0}<small> km</small></span>
+            <span class="lbl">Distance</span>
           </div>
           <div class="metric-card-mini">
-            <span class="num" style="color: #f59e0b;">${live.sprint_bursts || 0}</span>
-            <span class="lbl">Sprint Bursts</span>
+            <span class="num">${live.sprint_bursts || 0}</span>
+            <span class="lbl">Sprints</span>
           </div>
           <div class="metric-card-mini">
             <span class="num">${live.pass_accuracy || 0}%</span>
-            <span class="lbl">Pass Acc (${live.completed_passes || 0}/${live.total_passes || 0})</span>
+            <span class="lbl">Passing ${live.completed_passes || 0}/${live.total_passes || 0}</span>
           </div>
           <div class="metric-card-mini">
-            <span class="num" style="color: #10b981;">${live.goals || 0} G / ${live.total_shots || 0} S</span>
-            <span class="lbl">Goals / Shots</span>
+            <span class="num">${live.goals || 0} / ${live.total_shots || 0}</span>
+            <span class="lbl">Goals / shots</span>
           </div>
           <div class="metric-card-mini">
             <span class="num">${live.tackles_won || 0}</span>
-            <span class="lbl">Tackles Won</span>
+            <span class="lbl">Tackles won</span>
           </div>
         `;
       }
@@ -1656,23 +1946,23 @@ class OmniPitchApp {
         seasonContainer.innerHTML = `
           <div class="metric-card-mini">
             <span class="num">${s.appearances || 0}</span>
-            <span class="lbl">Season Appearances</span>
+            <span class="lbl">Appearances</span>
           </div>
           <div class="metric-card-mini">
-            <span class="num" style="color: #10b981;">${s.goals || 0} G / ${s.assists || 0} A</span>
-            <span class="lbl">Goals & Assists</span>
+            <span class="num">${s.goals || 0} <small>G</small> · ${s.assists || 0} <small>A</small></span>
+            <span class="lbl">Goals &amp; assists</span>
           </div>
           <div class="metric-card-mini">
-            <span class="num" style="color: #00f2fe;">${(s.xg_per_90 || 0).toFixed(2)}</span>
-            <span class="lbl">xG / 90 Minutes</span>
+            <span class="num">${(s.xg_per_90 || 0).toFixed(2)}</span>
+            <span class="lbl">xG per 90</span>
           </div>
           <div class="metric-card-mini">
             <span class="num">${s.pass_completion_rate || 0}%</span>
-            <span class="lbl">Pass Completion</span>
+            <span class="lbl">Pass completion</span>
           </div>
           <div class="metric-card-mini" style="grid-column: span 2;">
-            <span class="num" style="color: #f59e0b;">${s.top_speed_kmh || 0} km/h</span>
-            <span class="lbl">Peak Sprint Velocity Recorded</span>
+            <span class="num accent">${s.top_speed_kmh || 0}<small> km/h</small></span>
+            <span class="lbl">Top speed this season</span>
           </div>
         `;
       }
@@ -1699,7 +1989,7 @@ class OmniPitchApp {
       const data = await res.json();
       this.liveTableRows = data.rows || [];
       const badge = document.getElementById("datatable-count-badge");
-      if (badge) badge.textContent = `${this.liveTableRows.length} Ingested Records`;
+      if (badge) badge.textContent = `${this.liveTableRows.length} records`;
       this.renderLiveDataTable();
     } catch (err) {
       console.warn("Failed to fetch live data table:", err);
@@ -1732,7 +2022,7 @@ class OmniPitchApp {
     if (this.liveTableRows.length > 200) this.liveTableRows.pop();
 
     const badge = document.getElementById("datatable-count-badge");
-    if (badge) badge.textContent = `${this.liveTableRows.length} Ingested Records`;
+    if (badge) badge.textContent = `${this.liveTableRows.length} records`;
 
     // Re-render if table tab is currently visible
     const activeTab = document.querySelector(".mc-tab-btn.active");
@@ -1773,8 +2063,8 @@ class OmniPitchApp {
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="9" style="text-align: center; color: #64748b; padding: 28px;">
-            ${this.liveTableRows.length === 0 ? 'Awaiting telemetry ingest. Start match stream above or inspect simulated dataset.' : 'No events match the active search or type filter.'}
+          <td colspan="9" class="empty-state">
+            ${this.liveTableRows.length === 0 ? "No events ingested yet. Kick off the stream to fill the table." : "No events match this search or filter."}
           </td>
         </tr>
       `;
@@ -1783,28 +2073,30 @@ class OmniPitchApp {
 
     tbody.innerHTML = filtered.slice(0, 50).map((r) => {
       const isHome = r.team_id === "avalon_city";
-      const teamColor = isHome ? "#00A3E0" : "#e11d48";
-      const typeBadgeClass = `tele-badge tele-badge-${r.event_type.replace('_', '')}`;
-      const xgHighlight = parseFloat(r.expected_goals) > 0.15 ? 'color: #ec4899; font-weight: 800;' : '';
+      const typeBadgeClass = `tele-badge tele-badge-${r.event_type.replace(/_/g, "")}`;
+      const xgHot = parseFloat(r.expected_goals) > 0.15 ? "xg-hot" : "";
 
       return `
         <tr>
-          <td><span class="mono">${r.match_time}</span></td>
-          <td style="color: ${teamColor}; font-weight: 600; cursor: pointer;" onclick="window.omniPitch.openTeamModal('${r.team_id}')" title="Inspect ${r.team_name}">
-            ${r.team_name}
-          </td>
-          <td style="cursor: pointer; font-weight: 600;" onclick="window.omniPitch.openPlayerModal('${r.player_id}', '${r.player_name}')" title="Open ${r.player_name}'s sporting CV">
-            ⭐ ${r.player_name} <span style="color: #64748b;">(#${r.player_number})</span>
-          </td>
-          <td><span class="${typeBadgeClass}">${r.event_type}</span></td>
-          <td><span class="mono">(${r.start_x}, ${r.start_y})</span></td>
-          <td><span class="mono" style="${xgHighlight}">${r.expected_goals}</span></td>
-          <td><span class="mono">${r.pass_difficulty}</span></td>
-          <td><span class="mono">${r.shot_speed_kmh} km/h</span></td>
-          <td><span class="fabric-badge">✓ OneLake Delta</span></td>
+          <td><span class="mono">${esc(r.match_time)}</span></td>
+          <td><span class="cell-team cell-link" style="--team: ${isHome ? C.home : C.away}" data-team-id="${esc(r.team_id)}">${esc(r.team_name)}</span></td>
+          <td><span class="cell-link" data-player-id="${esc(r.player_id)}" data-player-name="${esc(r.player_name)}">${esc(r.player_name)}</span> <span class="cell-num">#${r.player_number}</span></td>
+          <td><span class="${typeBadgeClass}">${esc(r.event_type.replace(/_/g, " "))}</span></td>
+          <td><span class="mono">${r.start_x}, ${r.start_y}</span></td>
+          <td class="num-col"><span class="mono ${xgHot}">${r.expected_goals}</span></td>
+          <td class="num-col"><span class="mono">${r.pass_difficulty}</span></td>
+          <td class="num-col"><span class="mono">${r.shot_speed_kmh}</span></td>
+          <td><span class="fabric-badge"><svg class="ic"><use href="#i-check"/></svg>OneLake</span></td>
         </tr>
       `;
     }).join("");
+
+    tbody.querySelectorAll("[data-team-id]").forEach((el) => {
+      el.addEventListener("click", () => this.openTeamModal(el.dataset.teamId));
+    });
+    tbody.querySelectorAll("[data-player-name]").forEach((el) => {
+      el.addEventListener("click", () => this.openPlayerModal(el.dataset.playerId, el.dataset.playerName));
+    });
   }
 
   /* ==============================================================================
@@ -1837,19 +2129,19 @@ class OmniPitchApp {
     if (!grid) return;
 
     grid.innerHTML = agents.map((agent) => {
-      const toolsText = agent.tools ? agent.tools.map(t => t.replace(/_/g, " ")).slice(0, 2).join(", ") : "Blackboard Memory";
-      const handoffTarget = agent.handoff_to ? agent.handoff_to.replace(/_/g, " ") : "Client";
+      const toolsText = agent.tools ? agent.tools.map((t) => t.replace(/_/g, " ")).slice(0, 2).join(", ") : "blackboard memory";
+      const handoffTarget = agent.handoff_to ? agent.handoff_to.replace(/_/g, " ") : "client";
 
       return `
         <div class="agent-pipeline-card">
           <div class="agent-card-top">
-            <span class="agent-model-pill">${agent.model || 'gpt-4o'}</span>
-            <span class="agent-status-dot" title="Status: Online & Ready"></span>
+            <span class="agent-model-pill">${esc(agent.model || "gpt-4o")}</span>
+            <span class="agent-status-dot" title="Online"></span>
           </div>
-          <div class="agent-name">${agent.name}</div>
-          <div class="agent-role-pill">${agent.role}</div>
-          <div class="agent-tools-list">🔧 Tools: ${toolsText}</div>
-          <div class="agent-handoff-flow">➔ Handoff: ${handoffTarget} (${agent.latency_ms || 25}ms)</div>
+          <div class="agent-name">${esc(agent.name)}</div>
+          <div class="agent-role-pill">${esc(agent.role)}</div>
+          <div class="agent-tools-list">tools: ${esc(toolsText)}</div>
+          <div class="agent-handoff-flow">→ ${esc(handoffTarget)} · ${agent.latency_ms || 25} ms</div>
         </div>
       `;
     }).join("");
@@ -1876,9 +2168,10 @@ class OmniPitchApp {
     const webhookUrl = webhookInput ? webhookInput.value.trim() : "";
     const statusBox = document.getElementById("pa-dispatch-status");
     const btn = document.getElementById("btn-dispatch-pa");
+    const btnLabel = btn ? btn.querySelector("span") : null;
 
     if (btn) {
-      btn.textContent = "⏳ Triggering Flow...";
+      btnLabel.textContent = "Sending…";
       btn.disabled = true;
     }
 
@@ -1889,20 +2182,18 @@ class OmniPitchApp {
         body: JSON.stringify({
           event_type: eventType,
           webhook_url: webhookUrl || null,
-          match_id: this.matchId
-        })
+          match_id: this.matchId,
+        }),
       });
 
       const data = await res.json();
       if (statusBox) {
-        statusBox.classList.remove("hidden");
+        statusBox.classList.remove("hidden", "error");
         const isSimulated = data.status === "simulated_success";
         statusBox.innerHTML = `
-          <strong>✓ Power Automate Trigger ${isSimulated ? 'Validated (Simulation Mode)' : 'Delivered'}!</strong>
-          <div>Event: <b>${data.event_type.toUpperCase()}</b> • Timestamp: ${data.timestamp} • Status: ${data.status}</div>
-          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">
-            ${isSimulated ? 'Enterprise payload verified against Microsoft Adaptive Card v1.5 schema and ready for Microsoft Teams channel webhook.' : `Webhook delivered with HTTP ${data.status_code}.`}
-          </div>
+          <strong>${isSimulated ? "Validated in simulation mode" : "Delivered to webhook"}</strong>
+          <div class="mono">${esc(data.event_type)} · ${esc(data.timestamp)} · ${esc(data.status)}</div>
+          <div>${isSimulated ? "Payload checked against Adaptive Card v1.5 and ready for a Teams channel webhook." : `Webhook responded with HTTP ${esc(data.status_code)}.`}</div>
         `;
       }
 
@@ -1915,11 +2206,12 @@ class OmniPitchApp {
       console.warn("Power Automate dispatch error:", err);
       if (statusBox) {
         statusBox.classList.remove("hidden");
-        statusBox.innerHTML = `<span style="color: #ef4444;">Dispatch failed: ${err.message}</span>`;
+        statusBox.classList.add("error");
+        statusBox.innerHTML = `<strong>Dispatch failed</strong><div>${esc(err.message)}</div>`;
       }
     } finally {
       if (btn) {
-        btn.textContent = "⚡ Dispatch Workflow";
+        btnLabel.textContent = "Dispatch";
         btn.disabled = false;
       }
     }
@@ -1936,15 +2228,15 @@ class OmniPitchApp {
       if (block.type === "Container" && block.style) {
         const styleClass = block.style === "warning" ? "warning" : (block.style === "attention" ? "attention" : "");
         const innerText = block.items && block.items[0] && block.items[0].text ? block.items[0].text : (block.items && block.items[0] && block.items[0].columns ? "MATCH EVENT" : "");
-        html += `<div class="ac-card-banner ${styleClass}">${innerText}</div>`;
+        html += `<div class="ac-card-banner ${styleClass}">${esc(innerText)}</div>`;
       } else if (block.type === "TextBlock") {
         const isBolder = block.weight === "Bolder";
         const fontSize = block.size === "Large" ? "1.1rem" : (block.size === "ExtraLarge" ? "1.4rem" : "0.85rem");
-        html += `<div class="ac-narrative-text" style="font-size: ${fontSize}; font-weight: ${isBolder ? '800' : '400'};">${block.text}</div>`;
+        html += `<div class="ac-narrative-text" style="font-size: ${fontSize}; font-weight: ${isBolder ? "700" : "400"};">${esc(block.text)}</div>`;
       } else if (block.type === "FactSet") {
         html += `<table class="ac-fact-table">`;
         (block.facts || []).forEach((f) => {
-          html += `<tr><td class="ac-fact-title">${f.title}</td><td class="ac-fact-value">${f.value}</td></tr>`;
+          html += `<tr><td class="ac-fact-title">${esc(f.title)}</td><td class="ac-fact-value">${esc(f.value)}</td></tr>`;
         });
         html += `</table>`;
       }
@@ -1953,7 +2245,7 @@ class OmniPitchApp {
     if (card.actions && card.actions.length > 0) {
       html += `<div class="ac-actions-row">`;
       card.actions.forEach((act) => {
-        html += `<a href="${act.url || '#'}" target="_blank" class="ac-action-btn">${act.title}</a>`;
+        html += `<a href="${esc(act.url || "#")}" target="_blank" rel="noopener" class="ac-action-btn">${esc(act.title)}</a>`;
       });
       html += `</div>`;
     }
@@ -1966,6 +2258,3 @@ class OmniPitchApp {
 window.addEventListener("DOMContentLoaded", () => {
   window.omniPitch = new OmniPitchApp();
 });
-
-
-

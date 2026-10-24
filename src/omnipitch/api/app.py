@@ -114,20 +114,33 @@ async def stream_broadcast_overlays(
     lang: str = Query(default="en", description="ISO language code: 'en', 'it', 'es', 'de'"),
     player: Optional[str] = Query(default=None, description="Player spotlight name for Player Focus Mode"),
     delay: float = Query(default=1.0, ge=0.2, le=5.0),
-    max_overlays: int = Query(default=20, ge=3, le=60),
+    max_overlays: int = Query(default=20, ge=3, le=130),
+    start_second: int = Query(default=0, ge=0, le=5400, description="Match clock (seconds) to resume from"),
+    include_events: bool = Query(default=False, description="Also emit the raw match_event behind each overlay"),
     seed: int = 42,
 ):
     """
     Server-Sent Events (SSE) streaming machine-readable broadcast overlays
     synthesized by the Multi-Agent system (Tactical Analyst -> Narrator -> Verifier).
     Supports Player Focus Mode with dedicated spotlight tracking.
+
+    With include_events=true each overlay is preceded by the match_event it was
+    built from, so a client can drive the pitch and the commentary from one
+    consistent stream. A final stream_end event marks where the segment stopped.
     """
     engine, orchestrator = get_or_create_session(match_id, seed)
+    step_seconds = 45
+    # Align to the generator's step grid so resumed segments don't repeat a timestamp
+    start_sec = -(-start_second // step_seconds) * step_seconds
 
     async def overlay_generator() -> AsyncGenerator[str, None]:
         count = 0
-        for event in engine.generate_stream(step_seconds=45):
+        last_sec = start_sec
+        for event in engine.generate_stream(start_minute=0, step_seconds=step_seconds, start_second=start_sec):
             count += 1
+            last_sec = event.minute * 60 + event.second
+            if include_events:
+                yield f"event: match_event\ndata: {json.dumps(event.model_dump())}\n\n"
             overlay = await orchestrator.process_event(
                 event=event,
                 persona=persona,
@@ -139,6 +152,9 @@ async def stream_broadcast_overlays(
             if count >= max_overlays:
                 break
             await asyncio.sleep(delay)
+        full_time = last_sec + step_seconds > 90 * 60
+        end_payload = json.dumps({"next_second": last_sec + step_seconds, "full_time": full_time})
+        yield f"event: stream_end\ndata: {end_payload}\n\n"
 
     return StreamingResponse(overlay_generator(), media_type="text/event-stream")
 

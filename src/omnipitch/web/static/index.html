@@ -3,463 +3,450 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniPitch - Personalized Synthetic Match Intelligence on Microsoft AI</title>
+  <title>OmniPitch — Match Intelligence</title>
   <meta name="description" content="Real-time multi-agent match intelligence, explainable tactical insights, and broadcast overlays on Microsoft AI Foundry.">
-  
-  <!-- Modern Google Fonts -->
+  <meta name="theme-color" content="#0b0c0e">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  
-  <link rel="stylesheet" href="/static/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
-<body class="theme-dark">
-  <div class="app-container">
-    
-    <!-- Top Global Header -->
-    <header class="app-header">
-      <div class="header-left">
-        <div class="logo-group">
-          <div class="logo-badge">⚽ AI</div>
-          <div class="brand-text">
-            <h1>OmniPitch</h1>
-            <span class="tagline">Personalized Match Intelligence &bull; Microsoft AI Foundry</span>
-          </div>
-        </div>
-      </div>
+<body>
 
-      <!-- Match Scoreboard -->
-      <div class="scoreboard-card" id="scoreboard">
-        <div class="team-side home clickable-team" id="home-team-trigger" title="Click to view Avalon City FC standings & club profile">
-          <span class="team-color-dot home-dot"></span>
-          <span class="team-name" id="home-name">Avalon City FC</span>
-          <span class="team-rank-badge">#1</span>
-        </div>
-        <div class="score-display">
-          <span class="score-digit" id="home-score">0</span>
-          <span class="score-divider">-</span>
-          <span class="score-digit" id="away-score">0</span>
-        </div>
-        <div class="team-side away clickable-team" id="away-team-trigger" title="Click to view Solaria Rovers standings & club profile">
-          <span class="team-rank-badge">#2</span>
-          <span class="team-name" id="away-name">Solaria Rovers</span>
-          <span class="team-color-dot away-dot"></span>
-        </div>
-        <div class="clock-badge">
-          <span class="live-indicator"></span>
-          <span id="match-clock">00:00</span>
-        </div>
-      </div>
+  <!-- Icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 16 16"><path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 16 16"><path d="M2 6h2.5L8 3v10L4.5 10H2z" fill="currentColor"/><path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.3 6.3 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.6-3.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-code" viewBox="0 0 16 16"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 16 16"><path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" fill="currentColor"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 10.5V3a.5.5 0 0 1 .5-.5H11" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-star" viewBox="0 0 16 16"><path d="m8 1.8 1.9 4 4.3.5-3.2 3 .9 4.3L8 11.4l-3.9 2.2.9-4.3-3.2-3 4.3-.5z" fill="currentColor"/></symbol>
+  </svg>
 
-      <!-- Controls & Persona Switcher -->
-      <div class="header-right">
-        <!-- Persona Toggle -->
-        <div class="control-group">
-          <label class="control-label">VIEWING MODE</label>
-          <div class="segmented-control" id="persona-toggle">
-            <button class="seg-btn active" data-persona="analyst" id="btn-analyst">
-              <span class="icon">🔬</span> Tactical Analyst
-            </button>
-            <button class="seg-btn" data-persona="fan" id="btn-fan">
-              <span class="icon">🎉</span> Casual Fan
-            </button>
-          </div>
-        </div>
-
-        <!-- Player Focus Mode Selector -->
-        <div class="control-group">
-          <label class="control-label">PLAYER SPOTLIGHT</label>
-          <select id="player-select" class="custom-select">
-            <option value="">⭐ Dynamic Spotlight</option>
-            <option value="Julian Drake">Julian Drake (MID #8)</option>
-            <option value="Cyrus Kane">Cyrus Kane (FWD #9)</option>
-            <option value="Victor Sterling">Victor Sterling (FWD #9)</option>
-            <option value="Marcus Vance">Marcus Vance (GK #1)</option>
-          </select>
-        </div>
-
-        <!-- Tactical Formation Selector -->
-        <div class="control-group">
-          <label class="control-label">TACTICAL SYSTEM</label>
-          <select id="formation-select" class="custom-select">
-            <option value="4-3-3">4-3-3 High Press</option>
-            <option value="4-2-3-1">4-2-3-1 Midfield Box</option>
-            <option value="3-5-2">3-5-2 Wingbacks</option>
-          </select>
-        </div>
-
-        <!-- Language Selector -->
-        <div class="control-group">
-          <label class="control-label">LANGUAGE</label>
-          <select id="lang-select" class="custom-select">
-            <option value="en">🇬🇧 English</option>
-            <option value="it">🇮🇹 Italiano</option>
-            <option value="es">🇪🇸 Español</option>
-            <option value="de">🇩🇪 Deutsch</option>
-          </select>
-        </div>
-
-        <!-- Stream Action Button -->
-        <div class="control-group">
-          <label class="control-label">MATCH STREAM</label>
-          <div class="playback-controls">
-            <button id="btn-stream-toggle" class="btn-primary">
-              <span id="stream-icon">▶</span>
-              <span id="stream-text">Start Match Stream</span>
-            </button>
-            <button id="btn-speak-commentary" class="btn-secondary" title="Listen live AI commentary aloud">🔊</button>
-            <button id="btn-reset" class="btn-secondary" title="Reset match simulation">↺</button>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Multi-Agent Pipeline Live Status Bar -->
-    <div class="agent-pipeline-bar">
-      <div class="pipeline-title">
-        <span class="pulse-ring"></span>
-        <span>FOUNDRY AGENT PIPELINE:</span>
-      </div>
-      <div class="pipeline-steps">
-        <div class="agent-step active" id="step-ingest">
-          <div class="step-num">1</div>
-          <div class="step-content">
-            <span class="step-name">Azure Ingest</span>
-            <span class="step-role">Event Hubs Stream</span>
-          </div>
-        </div>
-        <div class="pipeline-connector"></div>
-        <div class="agent-step" id="step-analyst">
-          <div class="step-num">2</div>
-          <div class="step-content">
-            <span class="step-name">Tactical Analyst</span>
-            <span class="step-role">Pattern Detection</span>
-          </div>
-        </div>
-        <div class="pipeline-connector"></div>
-        <div class="agent-step" id="step-narrator">
-          <div class="step-num">3</div>
-          <div class="step-content">
-            <span class="step-name">Narrator Agent</span>
-            <span class="step-role">Persona Narrative</span>
-          </div>
-        </div>
-        <div class="pipeline-connector"></div>
-        <div class="agent-step" id="step-verifier">
-          <div class="step-num">4</div>
-          <div class="step-content">
-            <span class="step-name">Grounding Verifier</span>
-            <span class="step-role">Evidence ID Auditor</span>
-          </div>
-        </div>
-        <div class="pipeline-connector"></div>
-        <div class="agent-step" id="step-broadcast">
-          <div class="step-num">5</div>
-          <div class="step-content">
-            <span class="step-name">Broadcast Overlay</span>
-            <span class="step-role">JSON Render Feed</span>
-          </div>
-        </div>
+  <!-- ===================== Top bar ===================== -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/" aria-label="OmniPitch home">
+        <svg class="wordmark-mark" viewBox="0 0 28 28" aria-hidden="true">
+          <rect x="1" y="1" width="26" height="26" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+          <path d="M14 1v26" stroke="currentColor" stroke-width="2"/>
+          <circle cx="14" cy="14" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <circle cx="14" cy="14" r="1.6" fill="var(--accent)"/>
+        </svg>
+        <span class="wordmark-text">OMNI<b>PITCH</b></span>
+      </a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#pitch-section">Live</a>
+        <a href="#matchcenter-section">Match Centre</a>
+        <a href="#matchcenter-section" data-jump-tab="tab-foundry">Agents</a>
+        <a href="#matchcenter-section" data-jump-tab="tab-datatable">Data</a>
+      </nav>
+      <div class="topbar-meta">
+        <span class="sys-status"><span class="sys-dot"></span>Foundry online</span>
+        <select id="lang-select" class="custom-select select-compact" aria-label="Commentary language">
+          <option value="en">EN</option>
+          <option value="it">IT</option>
+          <option value="es">ES</option>
+          <option value="de">DE</option>
+        </select>
       </div>
     </div>
+  </header>
 
-    <!-- Main Dynamic Grid -->
+  <div class="app-container">
+
+    <!-- ===================== Scoreboard ===================== -->
+    <section class="scoreboard" id="scoreboard" aria-label="Scoreboard">
+      <div class="scoreboard-competition">
+        <span>Aethelgard Premier Championship</span><span class="sep"></span><span>Matchweek 29</span><span class="sep"></span><span id="pitch-status">Aethelgard Arena · 16°C</span>
+      </div>
+
+      <div class="scoreboard-main">
+        <button class="sb-team home clickable-team" id="home-team-trigger" title="Avalon City FC — standings & club profile">
+          <span class="crest crest-home" aria-hidden="true">
+            <svg viewBox="0 0 40 46"><path d="M20 1 38 7v15c0 11-7.6 19.4-18 23C9.6 41.4 2 33 2 22V7z" fill="currentColor"/><text x="20" y="27" text-anchor="middle">AVA</text></svg>
+          </span>
+          <span class="sb-team-text">
+            <span class="sb-team-name" id="home-name">Avalon City</span>
+            <span class="sb-team-meta"><span class="team-rank-badge">1st</span> Home</span>
+          </span>
+        </button>
+
+        <div class="sb-center">
+          <div class="sb-score">
+            <span class="score-digit" id="home-score">0</span>
+            <span class="score-divider"></span>
+            <span class="score-digit" id="away-score">0</span>
+          </div>
+          <div class="sb-clock">
+            <span class="live-tag"><span class="live-indicator"></span><span class="live-label">Pre-match</span></span>
+            <span class="clock-value" id="match-clock">00:00</span>
+          </div>
+        </div>
+
+        <button class="sb-team away clickable-team" id="away-team-trigger" title="Solaria Rovers — standings & club profile">
+          <span class="sb-team-text">
+            <span class="sb-team-name" id="away-name">Solaria Rovers</span>
+            <span class="sb-team-meta">Away <span class="team-rank-badge">2nd</span></span>
+          </span>
+          <span class="crest crest-away" aria-hidden="true">
+            <svg viewBox="0 0 40 46"><path d="M20 1 38 7v15c0 11-7.6 19.4-18 23C9.6 41.4 2 33 2 22V7z" fill="currentColor"/><text x="20" y="27" text-anchor="middle">SOL</text></svg>
+          </span>
+        </button>
+      </div>
+
+      <!-- Control strip -->
+      <div class="control-strip">
+        <div class="control-group">
+          <label class="control-label" for="btn-analyst">View</label>
+          <div class="segmented-control" id="persona-toggle" role="tablist">
+            <button class="seg-btn active" data-persona="analyst" id="btn-analyst">Analyst</button>
+            <button class="seg-btn" data-persona="fan" id="btn-fan">Fan</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="player-select">Spotlight</label>
+          <select id="player-select" class="custom-select">
+            <option value="">Auto</option>
+            <option value="Julian Drake">Julian Drake · 8</option>
+            <option value="Cyrus Kane">Cyrus Kane · 9</option>
+            <option value="Victor Sterling">Victor Sterling · 9</option>
+            <option value="Marcus Vance">Marcus Vance · 1</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="formation-select">Home system</label>
+          <select id="formation-select" class="custom-select">
+            <option value="4-3-3">4-3-3 High press</option>
+            <option value="4-2-3-1">4-2-3-1 Double pivot</option>
+            <option value="3-5-2">3-5-2 Wing-backs</option>
+          </select>
+        </div>
+
+        <div class="control-spacer"></div>
+
+        <div class="playback-controls">
+          <button id="btn-speak-commentary" class="btn-secondary btn-icon" title="Read commentary aloud" aria-label="Read commentary aloud">
+            <svg class="ic"><use href="#i-sound"/></svg>
+          </button>
+          <button id="btn-reset" class="btn-secondary btn-icon" title="Reset simulation" aria-label="Reset simulation">
+            <svg class="ic"><use href="#i-reset"/></svg>
+          </button>
+          <button id="btn-stream-toggle" class="btn-primary btn-stream">
+            <svg class="ic"><use id="stream-icon" href="#i-play"/></svg>
+            <span id="stream-text">Kick off</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Agent pipeline ===================== -->
+    <div class="agent-pipeline-bar" aria-label="Agent pipeline">
+      <div class="pipeline-title">
+        <span class="pulse-ring"></span>
+        <span>Agent pipeline</span>
+      </div>
+      <ol class="pipeline-steps">
+        <li class="agent-step active" id="step-ingest">
+          <span class="step-num">01</span>
+          <span class="step-content"><span class="step-name">Ingest</span><span class="step-role">Event Hubs</span></span>
+        </li>
+        <li class="agent-step" id="step-analyst">
+          <span class="step-num">02</span>
+          <span class="step-content"><span class="step-name">Tactical analyst</span><span class="step-role">Pattern detection</span></span>
+        </li>
+        <li class="agent-step" id="step-narrator">
+          <span class="step-num">03</span>
+          <span class="step-content"><span class="step-name">Narrator</span><span class="step-role">Persona narrative</span></span>
+        </li>
+        <li class="agent-step" id="step-verifier">
+          <span class="step-num">04</span>
+          <span class="step-content"><span class="step-name">Verifier</span><span class="step-role">Evidence audit</span></span>
+        </li>
+        <li class="agent-step" id="step-broadcast">
+          <span class="step-num">05</span>
+          <span class="step-content"><span class="step-name">Broadcast</span><span class="step-role">JSON overlay</span></span>
+        </li>
+      </ol>
+    </div>
+
+    <!-- ===================== Main grid ===================== -->
     <main class="main-layout">
-      
-      <!-- Left: Interactive 2D Pitch Visualizer -->
-      <section class="pitch-section glass-panel">
+
+      <!-- Pitch -->
+      <section class="pitch-section panel" id="pitch-section">
         <div class="section-header">
           <div class="section-title-wrap">
-            <h2>Pitch Telemetry & Spatial Tracking</h2>
-            <span class="badge-subtle" id="pitch-status">Aethelgard Arena &bull; Clear 16°C</span>
+            <span class="eyebrow">Spatial tracking</span>
+            <h2>Live pitch</h2>
           </div>
           <div class="pitch-legend">
-            <button id="btn-toggle-pitch-mode" class="btn-pitch-mode" title="Switch between real-time ball/pass tracking and complete head-to-head tactical formations">⚔️ Tactical XI View</button>
-            <button id="btn-toggle-heatmap" class="btn-heatmap">🔥 Zonal Heatmap: OFF</button>
-            <span class="legend-item"><span class="dot-home"></span> Avalon City</span>
-            <span class="legend-item"><span class="dot-away"></span> Solaria</span>
-            <span class="legend-item"><span class="vector-line"></span> Pass Vector</span>
+            <span class="legend-item"><span class="dot-home"></span>AVA</span>
+            <span class="legend-item"><span class="dot-away"></span>SOL</span>
+            <span class="legend-item"><span class="vector-line"></span>Pass</span>
+            <span class="legend-divider"></span>
+            <button id="btn-toggle-pitch-mode" class="btn-toggle btn-pitch-mode" title="Show both starting XIs with live ratings">Formations</button>
+            <button id="btn-toggle-heatmap" class="btn-toggle btn-heatmap" title="Overlay territory by thirds">Zones</button>
           </div>
         </div>
 
         <div class="pitch-container" id="pitch-wrapper">
-          <canvas id="pitch-canvas" width="840" height="544"></canvas>
-          
-          <!-- Ball & Vector Overlays (Managed by Canvas & DOM) -->
-          <div class="pitch-watermark">OMNIPITCH SYNTHETIC ENGINE</div>
-          
-          <!-- Spatial Callout Tooltip -->
+          <canvas id="pitch-canvas"></canvas>
           <div id="spatial-callout" class="spatial-callout hidden">
-            <div class="callout-header" id="callout-title">Pass Action</div>
-            <div class="callout-metric" id="callout-metric">Dist: 24m | Diff: 0.42</div>
+            <div class="callout-header" id="callout-title">Pass</div>
+            <div class="callout-metric" id="callout-metric"></div>
           </div>
         </div>
 
-        <!-- Player Spotlight HUD (Fulfills Player Focus Mode from Hackathon Rules) -->
+        <!-- Player spotlight -->
         <div class="player-spotlight-card" id="player-spotlight-panel">
           <div class="spotlight-left">
-            <div class="player-avatar-badge" id="spotlight-avatar">#8</div>
+            <div class="player-avatar-badge" id="spotlight-avatar">8</div>
             <div class="player-identity">
+              <span class="eyebrow">Player spotlight</span>
               <div class="spotlight-name" id="spotlight-name">Julian Drake</div>
-              <div class="spotlight-team" id="spotlight-team">Avalon City FC &bull; Playmaker</div>
+              <div class="spotlight-team" id="spotlight-team">Avalon City · Playmaker</div>
             </div>
           </div>
           <div class="spotlight-stats">
             <div class="stat-pill">
               <span class="stat-num" id="spotlight-sprints">0</span>
-              <span class="stat-lbl">Sprint Bursts (>27 km/h)</span>
+              <span class="stat-lbl">Sprints &gt;27 km/h</span>
             </div>
             <div class="stat-pill">
               <span class="stat-num" id="spotlight-dist">0.00 km</span>
-              <span class="stat-lbl">Distance Covered</span>
+              <span class="stat-lbl">Distance</span>
             </div>
             <div class="stat-pill">
               <span class="stat-num" id="spotlight-acc">100%</span>
-              <span class="stat-lbl">Pass Accuracy</span>
+              <span class="stat-lbl">Pass accuracy</span>
             </div>
           </div>
-          <div class="spotlight-narrative" id="spotlight-narrative">
-            Select a player above or start the stream to activate individual tactical tracking and AI performance insights.
-          </div>
+          <p class="spotlight-narrative" id="spotlight-narrative">
+            Pick a player or kick off the stream to start individual tracking.
+          </p>
         </div>
 
-        <!-- Tactical Gauges Under Pitch -->
+        <!-- Gauges -->
         <div class="tactical-gauges-grid">
-          
-          <!-- Gauge 1: Control vs Chaos -->
           <div class="gauge-card">
             <div class="gauge-header">
-              <span class="gauge-title">CONTROL VS CHAOS</span>
+              <span class="gauge-title">Control <i>vs</i> chaos</span>
               <span class="gauge-val" id="val-control">50% Control</span>
             </div>
-            <div class="meter-bar-track">
-              <div class="meter-bar-fill control-gradient" id="bar-control" style="width: 50%;"></div>
-            </div>
-            <div class="meter-labels">
-              <span>0% Chaos / Frantic</span>
-              <span>100% Dominant Control</span>
-            </div>
+            <div class="meter-bar-track"><div class="meter-bar-fill control-gradient" id="bar-control" style="width: 50%;"></div></div>
+            <div class="meter-labels"><span>Chaotic</span><span>Controlled</span></div>
           </div>
 
-          <!-- Gauge 2: Defensive Pressure -->
           <div class="gauge-card">
             <div class="gauge-header">
-              <span class="gauge-title">DEFENSIVE PRESSURE</span>
+              <span class="gauge-title">Defensive pressure</span>
               <span class="gauge-val" id="val-pressure">0.53 (Moderate)</span>
             </div>
-            <div class="meter-bar-track">
-              <div class="meter-bar-fill pressure-gradient" id="bar-pressure" style="width: 53%;"></div>
-            </div>
-            <div class="meter-labels">
-              <span>Low Block</span>
-              <span>Suffocating Press</span>
-            </div>
+            <div class="meter-bar-track"><div class="meter-bar-fill pressure-gradient" id="bar-pressure" style="width: 53%;"></div></div>
+            <div class="meter-labels"><span>Low block</span><span>Full press</span></div>
           </div>
 
-          <!-- Gauge 3: Game Rhythm Tempo -->
           <div class="gauge-card">
             <div class="gauge-header">
-              <span class="gauge-title">GAME RHYTHM TEMPO</span>
-              <span class="gauge-val highlight-badge" id="val-tempo">balanced-contest</span>
+              <span class="gauge-title">Game rhythm</span>
             </div>
-            <p class="gauge-desc" id="desc-tempo">Sliding window tactical tempo classification.</p>
+            <div class="gauge-val highlight-badge" id="val-tempo">balanced-contest</div>
+            <p class="gauge-desc" id="desc-tempo">Sliding-window tempo classification.</p>
           </div>
-
         </div>
       </section>
 
-      <!-- Right: Intelligence & Broadcast Overlays -->
+      <!-- Right column -->
       <section class="intel-section">
-        
-        <!-- Live Verified Broadcast Overlay Card -->
-        <div class="broadcast-card glass-panel" id="broadcast-card">
+
+        <!-- Broadcast overlay -->
+        <article class="broadcast-card panel" id="broadcast-card">
           <div class="broadcast-header">
-            <div class="broadcast-badge">
-              <span class="live-dot"></span> LIVE BROADCAST OVERLAY
-            </div>
+            <div class="broadcast-badge"><span class="live-dot"></span>On air</div>
             <div class="verification-badge" id="overlay-verified-badge">
-              <span class="check-icon">✓</span> GROUNDED & VERIFIED
+              <svg class="ic"><use href="#i-check"/></svg> Grounded
             </div>
           </div>
 
           <div class="broadcast-body">
             <div class="overlay-time" id="overlay-time">00:00</div>
-            <h3 class="overlay-headline" id="overlay-headline">Waiting for match stream...</h3>
+            <h3 class="overlay-headline" id="overlay-headline">Waiting for kick-off</h3>
             <p class="overlay-narrative" id="overlay-narrative">
-              Start the stream or select play above to witness real-time multi-agent reasoning, factual grounding, and explainable storytelling.
+              Start the stream to watch the agents read the game, check every claim against the event log, and write the broadcast in real time.
             </p>
+            <div class="overlay-genby" id="overlay-genby"></div>
           </div>
 
           <div class="evidence-box">
             <div class="evidence-title">
-              <span>🔗 Grounding Evidence Citations:</span>
-              <span class="evidence-count" id="evidence-count">0 Event IDs</span>
+              <span>Evidence</span>
+              <span class="evidence-count" id="evidence-count">0 events</span>
             </div>
             <div class="evidence-tags" id="evidence-tags">
-              <span class="tag-empty">Awaiting citations...</span>
+              <span class="tag-empty">No citations yet</span>
             </div>
           </div>
 
           <div class="broadcast-footer">
-            <div class="footer-meta">
-              <span>Output: <code class="code-badge">JSON Machine-Readable</code></span>
-              <span class="trace-pill" id="trace-badge">⚡ Foundry GPT-4o &bull; 12ms</span>
-            </div>
+            <span class="trace-pill" id="trace-badge">gpt-4o · — ms</span>
             <div class="footer-actions">
-              <button class="btn-inspect-json" id="btn-export-fabric">Export to Fabric</button>
-              <button class="btn-inspect-json" id="btn-toggle-json">Inspect Overlay JSON</button>
+              <button class="btn-ghost" id="btn-export-fabric"><svg class="ic"><use href="#i-download"/></svg>Fabric</button>
+              <button class="btn-ghost" id="btn-toggle-json"><svg class="ic"><use href="#i-code"/></svg>JSON</button>
             </div>
           </div>
 
-          <!-- Collapsible JSON Payload Viewer -->
           <div class="json-inspector hidden" id="json-inspector">
             <pre><code id="json-code">{}</code></pre>
           </div>
-        </div>
+        </article>
 
-        <!-- Telemetry & Raw Event Stream Feed -->
-        <div class="telemetry-card glass-panel">
+        <!-- Telemetry -->
+        <div class="telemetry-card panel">
           <div class="telemetry-header">
-            <h3>Raw Telemetry Stream (Azure Ingest)</h3>
-            <span class="event-counter" id="event-counter">0 events received</span>
+            <div>
+              <span class="eyebrow">Azure ingest</span>
+              <h3>Event feed</h3>
+            </div>
+            <span class="event-counter" id="event-counter">0 events</span>
           </div>
-          
           <div class="telemetry-list" id="telemetry-list">
-            <!-- Dynamic stream rows will be prepended here -->
             <div class="telemetry-placeholder">
-              <div class="pulse-text">Stream ready. Click "Start Match Stream" above.</div>
+              <div class="pulse-text">Feed idle — press Kick off.</div>
             </div>
           </div>
         </div>
 
       </section>
-
     </main>
 
-    <!-- OmniPitch Pro Match Intelligence Suite -->
-    <section class="matchcenter-container glass-panel" id="matchcenter-section">
+    <!-- ===================== Match centre ===================== -->
+    <section class="matchcenter-container panel" id="matchcenter-section">
       <div class="matchcenter-header">
         <div class="matchcenter-badge-wrap">
-          <div class="matchcenter-pill">⚡ PRO MATCH INTELLIGENCE</div>
-          <h2>Tactical Dynamics & Match Center</h2>
-          <span class="matchcenter-sub">Longitudinal Match Intelligence &bull; Attack Momentum, H2H Comparison, Lineup Ratings & Interactive Shot Map</span>
+          <span class="eyebrow">Match centre</span>
+          <h2>Tactical dynamics</h2>
         </div>
-        <div class="matchcenter-controls-wrap">
-          <div class="matchcenter-tabs" id="matchcenter-tabs">
-            <button class="mc-tab-btn active" data-tab="tab-momentum" id="btn-tab-momentum">📈 Attack Momentum</button>
-            <button class="mc-tab-btn" data-tab="tab-comparison" id="btn-tab-comparison">📊 Match Statistics</button>
-            <button class="mc-tab-btn" data-tab="tab-lineups" id="btn-tab-lineups">👥 Ratings & Lineups</button>
-            <button class="mc-tab-btn" data-tab="tab-shotmap" id="btn-tab-shotmap">🎯 Shot Map</button>
-            <button class="mc-tab-btn" data-tab="tab-timeline" id="btn-tab-timeline">⏱️ Incident Timeline</button>
-            <button class="mc-tab-btn" data-tab="tab-datatable" id="btn-tab-datatable">📑 Live Data Table</button>
-            <button class="mc-tab-btn" data-tab="tab-foundry" id="btn-tab-foundry">🤖 AI Foundry & Workflows</button>
-          </div>
-          <button id="btn-export-match-report" class="btn-inspect-json" title="Download JSON match analytics dossier">📥 Export Match Report</button>
-        </div>
+        <button id="btn-export-match-report" class="btn-ghost" title="Download the match dossier as JSON">
+          <svg class="ic"><use href="#i-download"/></svg>Match report
+        </button>
       </div>
 
-      <!-- Tab 1: Attack Momentum Graph -->
+      <div class="matchcenter-tabs" id="matchcenter-tabs" role="tablist">
+        <button class="mc-tab-btn active" data-tab="tab-momentum" id="btn-tab-momentum">Momentum</button>
+        <button class="mc-tab-btn" data-tab="tab-comparison" id="btn-tab-comparison">Statistics</button>
+        <button class="mc-tab-btn" data-tab="tab-lineups" id="btn-tab-lineups">Line-ups</button>
+        <button class="mc-tab-btn" data-tab="tab-shotmap" id="btn-tab-shotmap">Shot map</button>
+        <button class="mc-tab-btn" data-tab="tab-timeline" id="btn-tab-timeline">Timeline</button>
+        <button class="mc-tab-btn" data-tab="tab-datatable" id="btn-tab-datatable">Event data</button>
+        <button class="mc-tab-btn" data-tab="tab-foundry" id="btn-tab-foundry">Agents &amp; workflows</button>
+      </div>
+
+      <!-- Momentum -->
       <div class="mc-tab-content active" id="tab-momentum">
         <div class="momentum-card">
           <div class="momentum-header">
             <div class="momentum-legend">
-              <span class="legend-chip home-chip"><span class="chip-color home"></span> Avalon City FC (Home Dominance)</span>
-              <span class="legend-chip neutral-chip"><span class="chip-color neutral"></span> Neutral Contest (0)</span>
-              <span class="legend-chip away-chip"><span class="chip-color away"></span> Solaria Rovers (Away Dominance)</span>
+              <span class="legend-chip"><span class="chip-color home"></span>Avalon City pressure</span>
+              <span class="legend-chip"><span class="chip-color away"></span>Solaria Rovers pressure</span>
             </div>
-            <div class="momentum-hint">Hover over minute bars to view tactical pressure & key incidents</div>
+            <div class="momentum-hint">Hover for minute detail</div>
           </div>
-          
           <div class="momentum-chart-wrapper">
-            <canvas id="momentum-canvas" width="1440" height="240"></canvas>
-            <div id="momentum-tooltip" class="momentum-tooltip hidden"></div>
+            <canvas id="momentum-canvas"></canvas>
+            <div id="momentum-tooltip" class="chart-tooltip momentum-tooltip hidden"></div>
           </div>
         </div>
       </div>
 
-      <!-- Tab 2: Match Statistics Head-to-Head Comparison -->
+      <!-- Statistics -->
       <div class="mc-tab-content" id="tab-comparison">
-        <div class="h2h-stats-grid" id="h2h-stats-container">
-          <!-- Populated dynamically by app.js -->
+        <div class="h2h-head">
+          <span class="h2h-head-team home">Avalon City</span>
+          <span class="h2h-head-team away">Solaria Rovers</span>
         </div>
+        <div class="h2h-stats-grid" id="h2h-stats-container"></div>
       </div>
 
-      <!-- Tab 3: Lineups & Dynamic Ratings -->
+      <!-- Line-ups -->
       <div class="mc-tab-content" id="tab-lineups">
         <div class="lineups-rating-grid">
-          <!-- Home Lineup -->
           <div class="team-lineup-column" id="home-lineup-column">
-            <div class="team-lineup-header clickable-team" id="lineup-home-team-trigger" title="Click to view Avalon City FC standings & club profile">
-              <div class="team-dot home-dot"></div>
+            <button class="team-lineup-header clickable-team home" id="lineup-home-team-trigger" title="Avalon City FC — standings & club profile">
+              <span class="team-dot home-dot"></span>
               <h3 id="lineup-home-team-name">Avalon City FC</h3>
               <span class="lineup-formation" id="lineup-home-formation-badge">4-3-3</span>
-              <span class="team-rank-badge">#1</span>
-            </div>
-            <div class="player-rating-list" id="home-player-ratings">
-              <!-- Populated dynamically -->
-            </div>
+            </button>
+            <div class="player-rating-list" id="home-player-ratings"></div>
           </div>
-
-          <!-- Away Lineup -->
           <div class="team-lineup-column" id="away-lineup-column">
-            <div class="team-lineup-header clickable-team" id="lineup-away-team-trigger" title="Click to view Solaria Rovers standings & club profile">
-              <div class="team-dot away-dot"></div>
+            <button class="team-lineup-header clickable-team away" id="lineup-away-team-trigger" title="Solaria Rovers — standings & club profile">
+              <span class="team-dot away-dot"></span>
               <h3 id="lineup-away-team-name">Solaria Rovers</h3>
               <span class="lineup-formation">4-3-3</span>
-              <span class="team-rank-badge">#2</span>
-            </div>
-            <div class="player-rating-list" id="away-player-ratings">
-              <!-- Populated dynamically -->
-            </div>
+            </button>
+            <div class="player-rating-list" id="away-player-ratings"></div>
           </div>
         </div>
       </div>
 
-      <!-- Tab 4: Interactive Shot Map -->
+      <!-- Shot map -->
       <div class="mc-tab-content" id="tab-shotmap">
         <div class="shotmap-wrapper">
           <div class="shotmap-pitch-wrap">
-            <canvas id="shotmap-canvas" width="800" height="480"></canvas>
-            <div id="shotmap-tooltip" class="shotmap-tooltip hidden"></div>
+            <canvas id="shotmap-canvas"></canvas>
+            <div id="shotmap-tooltip" class="chart-tooltip shotmap-tooltip hidden"></div>
           </div>
-          <div class="shotmap-sidebar">
+          <aside class="shotmap-sidebar">
             <div class="shotmap-legend">
-              <h4>Shot Outcomes</h4>
-              <div class="legend-row"><span class="marker-dot goal-marker"></span> <span>Goal</span></div>
-              <div class="legend-row"><span class="marker-dot saved-marker"></span> <span>Saved / On Target</span></div>
-              <div class="legend-row"><span class="marker-dot missed-marker"></span> <span>Off Target</span></div>
+              <span class="eyebrow">Outcome · size = xG</span>
+              <div class="legend-row"><span class="marker-dot goal-marker"></span>Goal</div>
+              <div class="legend-row"><span class="marker-dot saved-marker"></span>On target</div>
+              <div class="legend-row"><span class="marker-dot missed-marker"></span>Off target</div>
+              <div class="legend-note">Ring colour = team. Away shots are mirrored onto the same goal.</div>
             </div>
-            <div class="shotmap-summary-box" id="shotmap-summary">
-              <!-- Populated by JS -->
-            </div>
-          </div>
+            <div class="shotmap-summary-box" id="shotmap-summary"></div>
+          </aside>
         </div>
       </div>
 
-      <!-- Tab 5: Incident Timeline -->
+      <!-- Timeline -->
       <div class="mc-tab-content" id="tab-timeline">
-        <div class="timeline-stream" id="timeline-stream-list">
-          <!-- Populated dynamically -->
-        </div>
+        <div class="timeline-stream" id="timeline-stream-list"></div>
       </div>
 
-      <!-- Tab 6: Live Data Table (Microsoft Fabric OneLake Telemetry Stream) -->
+      <!-- Event data -->
       <div class="mc-tab-content" id="tab-datatable">
         <div class="datatable-card">
           <div class="datatable-toolbar">
             <div class="datatable-filters">
-              <input type="text" id="datatable-search" class="datatable-search-input" placeholder="🔍 Search player, event, or team..." />
+              <label class="search-field">
+                <svg class="ic"><use href="#i-search"/></svg>
+                <input type="text" id="datatable-search" class="datatable-search-input" placeholder="Player, team, event or ID" />
+              </label>
               <div class="datatable-type-pills" id="datatable-pills">
-                <button class="type-pill active" data-type="all">All Events</button>
+                <button class="type-pill active" data-type="all">All</button>
                 <button class="type-pill" data-type="pass">Passes</button>
-                <button class="type-pill" data-type="shot">Shots & Goals</button>
+                <button class="type-pill" data-type="shot">Shots</button>
                 <button class="type-pill" data-type="tackle">Tackles</button>
                 <button class="type-pill" data-type="foul">Fouls</button>
               </div>
             </div>
             <div class="datatable-actions">
-              <span class="datatable-counter" id="datatable-count-badge">0 Ingested Records</span>
-              <button id="btn-download-csv" class="btn-inspect-json" title="Download raw tabular events as CSV for Microsoft Fabric OneLake">📥 Export CSV (Fabric)</button>
+              <span class="datatable-counter" id="datatable-count-badge">0 records</span>
+              <button id="btn-download-csv" class="btn-ghost" title="Download events as CSV for Fabric OneLake">
+                <svg class="ic"><use href="#i-download"/></svg>CSV
+              </button>
             </div>
           </div>
           <div class="datatable-scroll-wrapper">
@@ -470,260 +457,200 @@
                   <th>Team</th>
                   <th>Player</th>
                   <th>Action</th>
-                  <th>Coordinates (X, Y)</th>
-                  <th>xG</th>
-                  <th>Pass Diff</th>
-                  <th>Speed</th>
-                  <th>Audit Grounding</th>
+                  <th>X, Y</th>
+                  <th class="num-col">xG</th>
+                  <th class="num-col">Pass diff.</th>
+                  <th class="num-col">Speed</th>
+                  <th>Audit</th>
                 </tr>
               </thead>
-              <tbody id="live-events-tbody">
-                <!-- Dynamically populated rows -->
-              </tbody>
+              <tbody id="live-events-tbody"></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- Tab 7: Microsoft AI Foundry Multi-Agent Hub & Power Automate Workflows -->
+      <!-- Agents & workflows -->
       <div class="mc-tab-content" id="tab-foundry">
         <div class="foundry-hub-card">
-          <!-- Top Architecture Banner -->
           <div class="foundry-header-wrap">
             <div class="foundry-title-group">
-              <div class="foundry-badge">🧠 MICROSOFT AI FOUNDRY AGENT SERVICE</div>
-              <h3>Multi-Agent Orchestration & Enterprise Workflows</h3>
+              <span class="eyebrow">Microsoft AI Foundry · Agent Service</span>
+              <h3>Five agents, one shared blackboard</h3>
               <p class="foundry-desc">
-                Autonomous agent collaboration conforming to the <b>Microsoft Agent Framework</b> with shared blackboard memory,
-                telemetry grounding verification (zero hallucination), and event-driven <b>Power Automate / Azure Logic Apps</b> triggers.
+                Agents built on the Microsoft Agent Framework share match state, hand off in sequence, and every sentence is checked against event IDs before it reaches air. Verified moments can fire Power Automate / Logic Apps flows.
               </p>
             </div>
             <div class="foundry-eval-ribbon">
-              <div class="eval-stat-pill">
-                <span class="eval-num" style="color: #10b981;">100.0%</span>
-                <span class="eval-lbl">Grounding Score</span>
-              </div>
-              <div class="eval-stat-pill">
-                <span class="eval-num" style="color: #00f2fe;">99.2%</span>
-                <span class="eval-lbl">Factual Consistency</span>
-              </div>
-              <div class="eval-stat-pill">
-                <span class="eval-num">GPT-4o</span>
-                <span class="eval-lbl">Primary Model</span>
-              </div>
-              <div class="eval-stat-pill">
-                <span class="eval-num">&lt; 85ms</span>
-                <span class="eval-lbl">Avg Pipeline Latency</span>
-              </div>
+              <div class="eval-stat-pill"><span class="eval-num accent">100%</span><span class="eval-lbl">Grounding</span></div>
+              <div class="eval-stat-pill"><span class="eval-num">99.2%</span><span class="eval-lbl">Factual consistency</span></div>
+              <div class="eval-stat-pill"><span class="eval-num">GPT-4o</span><span class="eval-lbl">Primary model</span></div>
+              <div class="eval-stat-pill"><span class="eval-num">&lt;85<small>ms</small></span><span class="eval-lbl">Pipeline latency</span></div>
             </div>
           </div>
 
-          <!-- 5 Agents Orchestration Map -->
           <div class="foundry-agents-section">
-            <h4 class="section-sub-title">🤖 Active Foundry Agents Pipeline (Shared Blackboard State)</h4>
-            <div class="agents-grid" id="foundry-agents-grid">
-              <!-- Dynamically populated by app.js -->
-            </div>
+            <h4 class="section-sub-title">Agent chain</h4>
+            <div class="agents-grid" id="foundry-agents-grid"></div>
           </div>
 
-          <!-- Enterprise Automation: Power Automate & Adaptive Cards -->
           <div class="power-automate-section">
             <div class="pa-header">
               <div class="pa-title-wrap">
-                <div class="pa-pill">⚡ ENTERPRISE INTEGRATION</div>
-                <h4>Power Automate & Azure Logic Apps Workflow Dispatcher</h4>
-                <p>Simulate or dispatch production-ready <b>Microsoft Teams Adaptive Cards (v1.5)</b> on verified match moments.</p>
+                <span class="eyebrow">Enterprise integration</span>
+                <h4>Power Automate dispatcher</h4>
+                <p>Send a Microsoft Teams Adaptive Card (v1.5) for a verified match moment.</p>
               </div>
               <div class="pa-controls">
-                <select id="pa-event-type-select" class="custom-select" style="max-width: 280px;">
-                  <option value="goal">⚽ Goal Event (Full Score & Tactical Overload)</option>
-                  <option value="tactical_shift">⚡ Tactical Shift (Dominance & PPDA Pressure)</option>
-                  <option value="incident">⚠️ Disciplinary Incident (VAR & Cards)</option>
+                <select id="pa-event-type-select" class="custom-select">
+                  <option value="goal">Goal</option>
+                  <option value="tactical_shift">Tactical shift</option>
+                  <option value="incident">Disciplinary incident</option>
                 </select>
-                <button id="btn-dispatch-pa" class="btn-primary" style="padding: 9px 18px;">⚡ Dispatch Workflow</button>
+                <button id="btn-dispatch-pa" class="btn-primary"><svg class="ic"><use href="#i-bolt"/></svg><span>Dispatch</span></button>
               </div>
             </div>
 
-            <!-- Optional Webhook Input -->
             <div class="pa-webhook-input-wrap">
-              <input type="text" id="pa-webhook-url" class="datatable-search-input" placeholder="Optional: Paste real Microsoft Teams / Power Automate Webhook URL (leave empty for instant simulation)..." />
+              <input type="text" id="pa-webhook-url" class="datatable-search-input" placeholder="Teams / Power Automate webhook URL (optional — empty runs a simulation)" />
             </div>
 
-            <!-- Dispatch Response Status -->
             <div id="pa-dispatch-status" class="pa-status-box hidden"></div>
 
-            <!-- Live Adaptive Card Visualizer -->
             <div class="adaptive-card-preview-container">
               <div class="ac-visual-wrapper">
                 <div class="ac-teams-chrome">
                   <div class="ac-teams-header">
-                    <span class="teams-logo-icon">👥</span>
-                    <span class="teams-channel-name">OmniPitch Production Channel &bull; Live Broadcast Alerts</span>
-                    <span class="teams-timestamp" id="ac-time-badge">Just now</span>
+                    <span class="teams-logo-icon">OP</span>
+                    <span class="teams-channel-name">OmniPitch Bot <span>· #live-broadcast</span></span>
+                    <span class="teams-timestamp" id="ac-time-badge">now</span>
                   </div>
-                  <div class="ac-teams-card-body" id="ac-rendered-body">
-                    <!-- Populated dynamically with Microsoft Teams Adaptive Card styling -->
-                  </div>
+                  <div class="ac-teams-card-body" id="ac-rendered-body"></div>
                 </div>
               </div>
               <div class="ac-json-wrapper">
                 <div class="ac-json-header">
-                  <span>📄 Microsoft Adaptive Card Schema (JSON v1.5)</span>
-                  <button id="btn-copy-card-json" class="btn-inspect-json">📋 Copy JSON</button>
+                  <span>adaptive-card.json</span>
+                  <button id="btn-copy-card-json" class="btn-ghost"><svg class="ic"><use href="#i-copy"/></svg><span>Copy</span></button>
                 </div>
                 <pre class="ac-json-pre"><code id="ac-json-code">{}</code></pre>
               </div>
             </div>
-
           </div>
         </div>
       </div>
     </section>
 
+    <footer class="app-footer">
+      <span>OmniPitch · Synthetic match data — all clubs and players are fictional.</span>
+      <span>Built for Inside the Game · Microsoft × Premier League</span>
+    </footer>
   </div>
 
-  <!-- ==============================================================================
-       Modal: Team Standing & Club Intelligence
-       ============================================================================== -->
-  <div id="team-modal" class="modal-backdrop hidden">
-    <div class="modal-card glass-panel">
+  <!-- ===================== Team modal ===================== -->
+  <div id="team-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-team-name">
+    <div class="modal-card">
       <div class="modal-header">
         <div class="modal-team-identity">
           <div class="modal-team-badge" id="modal-team-color-box"></div>
           <div>
             <h2 id="modal-team-name">Avalon City FC</h2>
-            <span class="modal-team-meta" id="modal-team-meta">Aethelgard Arena &bull; Founded 1904</span>
+            <span class="modal-team-meta" id="modal-team-meta">Aethelgard Arena · Founded 1904</span>
           </div>
         </div>
-        <button class="modal-close-btn" id="btn-close-team-modal">&times;</button>
+        <button class="modal-close-btn" id="btn-close-team-modal" aria-label="Close"><svg class="ic"><use href="#i-close"/></svg></button>
       </div>
 
       <div class="modal-tabs">
-        <button class="modal-tab-btn active" data-modaltab="team-tab-standings">🏆 Championship Standings</button>
-        <button class="modal-tab-btn" data-modaltab="team-tab-profile">📋 Club Analytics & Form</button>
+        <button class="modal-tab-btn active" data-modaltab="team-tab-standings">Table</button>
+        <button class="modal-tab-btn" data-modaltab="team-tab-profile">Club profile</button>
       </div>
 
       <div class="modal-body">
-        <!-- Standings View -->
         <div class="modal-tab-pane active" id="team-tab-standings">
           <div class="standings-table-wrap">
             <table class="standings-table">
               <thead>
                 <tr>
-                  <th>Pos</th>
-                  <th>Club</th>
-                  <th>P</th>
-                  <th>W</th>
-                  <th>D</th>
-                  <th>L</th>
-                  <th>GF</th>
-                  <th>GA</th>
-                  <th>GD</th>
-                  <th>PTS</th>
-                  <th>Form</th>
+                  <th>#</th><th class="club-col">Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th>
                 </tr>
               </thead>
-              <tbody id="standings-tbody">
-                <!-- Populated dynamically -->
-              </tbody>
+              <tbody id="standings-tbody"></tbody>
             </table>
           </div>
           <div class="standings-zones-legend">
-            <span><span class="zone-dot cl-dot"></span> Championship / Continental Elite (1-4)</span>
-            <span><span class="zone-dot el-dot"></span> Europa Stage (5)</span>
-            <span><span class="zone-dot rel-dot"></span> Relegation Battle (9-10)</span>
+            <span><span class="zone-dot cl-dot"></span>Continental (1–4)</span>
+            <span><span class="zone-dot el-dot"></span>Europa (5)</span>
+            <span><span class="zone-dot rel-dot"></span>Relegation (9–10)</span>
           </div>
         </div>
-
-        <!-- Club Profile View -->
         <div class="modal-tab-pane" id="team-tab-profile">
-          <div class="team-profile-grid" id="team-profile-content">
-            <!-- Populated dynamically -->
-          </div>
+          <div class="team-profile-grid" id="team-profile-content"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ==============================================================================
-       Modal: Player Dossier, Sporting CV & Career Statistics
-       ============================================================================== -->
-  <div id="player-modal" class="modal-backdrop hidden">
-    <div class="modal-card glass-panel modal-card-large">
-      <div class="modal-header">
+  <!-- ===================== Player modal ===================== -->
+  <div id="player-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-player-name">
+    <div class="modal-card modal-card-large">
+      <div class="modal-header player-modal-header">
         <div class="modal-player-identity">
-          <div class="modal-player-jersey" id="modal-player-num">#8</div>
+          <div class="modal-player-photo hidden" id="modal-player-photo"></div>
+          <div class="modal-player-jersey" id="modal-player-num">8</div>
           <div>
             <div class="modal-player-topline">
               <span class="modal-badge-role" id="modal-player-pos">MID</span>
               <span class="modal-player-team" id="modal-player-team">Avalon City FC</span>
             </div>
             <h2 id="modal-player-name">Julian Drake</h2>
-            <span class="modal-player-archetype" id="modal-player-archetype">World-Class Box-to-Box Playmaker & Metronome</span>
+            <span class="modal-player-archetype" id="modal-player-archetype">Box-to-box playmaker</span>
           </div>
         </div>
         <div class="modal-header-actions">
-          <button id="btn-spotlight-from-modal" class="btn-primary" style="font-size:0.8rem; padding: 7px 16px;">⭐ Focus Spotlight</button>
-          <button class="modal-close-btn" id="btn-close-player-modal">&times;</button>
+          <button id="btn-spotlight-from-modal" class="btn-primary"><svg class="ic"><use href="#i-star"/></svg>Spotlight</button>
+          <button class="modal-close-btn" id="btn-close-player-modal" aria-label="Close"><svg class="ic"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
       <div class="modal-body">
-        <!-- Bio Summary Ribbon -->
         <div class="player-bio-ribbon">
           <div class="bio-pill"><span class="lbl">Age</span><span class="val" id="bio-age">26</span></div>
-          <div class="bio-pill"><span class="lbl">Nationality</span><span class="val" id="bio-nat">England 🏴󠁧󠁢󠁥󠁮󠁧󠁿</span></div>
+          <div class="bio-pill"><span class="lbl">Nationality</span><span class="val" id="bio-nat">England</span></div>
           <div class="bio-pill"><span class="lbl">Height</span><span class="val" id="bio-height">184 cm</span></div>
-          <div class="bio-pill"><span class="lbl">Preferred Foot</span><span class="val" id="bio-foot">Right</span></div>
-          <div class="bio-pill"><span class="lbl">Market Valuation</span><span class="val" style="color: #10b981;" id="bio-val">€85.0M</span></div>
-          <div class="bio-pill"><span class="lbl">Contract Until</span><span class="val" id="bio-contract">June 2030</span></div>
+          <div class="bio-pill"><span class="lbl">Foot</span><span class="val" id="bio-foot">Right</span></div>
+          <div class="bio-pill"><span class="lbl">Value</span><span class="val accent" id="bio-val">€85.0M</span></div>
+          <div class="bio-pill"><span class="lbl">Contract</span><span class="val" id="bio-contract">June 2030</span></div>
         </div>
 
         <div class="player-dossier-layout">
-          <!-- Left Column: Sporting CV, Career Trajectory, Palmarès -->
           <div class="dossier-col">
             <div class="dossier-block">
-              <h3>📜 Sporting CV & Career Highlights</h3>
-              <div class="cv-info-row">
-                <span class="cv-label">Youth Academy:</span>
-                <span class="cv-value" id="cv-academy">Avalon City Youth Academy (2011-2017)</span>
-              </div>
-              <div class="cv-info-row">
-                <span class="cv-label">Senior International:</span>
-                <span class="cv-value" id="cv-caps">42 Caps (8 Goals)</span>
-              </div>
-              
+              <h3>Career</h3>
+              <div class="cv-info-row"><span class="cv-label">Academy</span><span class="cv-value" id="cv-academy"></span></div>
+              <div class="cv-info-row"><span class="cv-label">International</span><span class="cv-value" id="cv-caps"></span></div>
               <div class="cv-sub-section">
-                <h4>Previous Club Trajectory</h4>
+                <h4>Clubs</h4>
                 <div id="cv-clubs-list" class="cv-clubs-list"></div>
               </div>
-
               <div class="cv-sub-section">
-                <h4>Palmarès & Honors</h4>
+                <h4>Honours</h4>
                 <div id="cv-honors-list" class="honors-tags"></div>
               </div>
-
               <div class="cv-sub-section">
-                <h4>Tactical Scouting Report</h4>
+                <h4>Scouting report</h4>
                 <p id="cv-scouting-text" class="scouting-text"></p>
               </div>
             </div>
           </div>
-
-          <!-- Right Column: Live Match Performance & Season Statistics -->
           <div class="dossier-col">
             <div class="dossier-block">
-              <h3>⚡ Live Match Contribution (Today)</h3>
-              <div class="live-match-grid" id="modal-live-metrics">
-                <!-- Live rating, km, passes, shots, tackles -->
-              </div>
+              <h3>This match</h3>
+              <div class="live-match-grid" id="modal-live-metrics"></div>
             </div>
-
-            <div class="dossier-block" style="margin-top: 14px;">
-              <h3>📊 Season 2025/26 Longitudinal Metrics</h3>
-              <div class="season-stats-grid" id="modal-season-metrics">
-                <!-- Goals, Assists, xG/90, Pass Acc, Top Speed -->
-              </div>
+            <div class="dossier-block">
+              <h3>Season 2025/26</h3>
+              <div class="season-stats-grid" id="modal-season-metrics"></div>
             </div>
           </div>
         </div>
@@ -731,7 +658,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>
-

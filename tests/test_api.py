@@ -1,5 +1,7 @@
 """Tests for OmniPitch FastAPI endpoints."""
 
+import json
+
 from fastapi.testclient import TestClient
 from omnipitch.api.app import app
 from omnipitch.generator.engine import MatchSimulationEngine
@@ -39,6 +41,38 @@ def test_match_events_batch_endpoint():
     first = events[0]
     assert first["event_id"] == "EVT-0001"
     assert "tactical_context" in first
+
+
+def _parse_sse(body: str):
+    frames = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        frames.append((lines["event"], json.loads(lines["data"])))
+    return frames
+
+
+def test_overlay_stream_with_events_is_paired_and_resumable():
+    client.post("/api/match/MATCH-2026-SSE/reset")
+    response = client.get(
+        "/api/match/MATCH-2026-SSE/overlays/stream?delay=0.2&max_overlays=3&include_events=true"
+    )
+    frames = _parse_sse(response.text)
+    kinds = [kind for kind, _ in frames]
+    assert kinds == ["match_event", "broadcast_overlay"] * 3 + ["stream_end"]
+
+    # Each overlay cites the event emitted just before it
+    for (_, event), (_, overlay) in zip(frames[0:6:2], frames[1:6:2]):
+        assert event["event_id"] in overlay["evidence_event_ids"]
+
+    end = frames[-1][1]
+    assert end == {"next_second": 135, "full_time": False}
+
+    # Resuming continues the clock instead of restarting at kick-off
+    resumed = _parse_sse(client.get(
+        f"/api/match/MATCH-2026-SSE/overlays/stream?delay=0.2&max_overlays=3&include_events=true&start_second={end['next_second']}"
+    ).text)
+    first_event = resumed[0][1]
+    assert first_event["minute"] * 60 + first_event["second"] == 135
 
 
 def test_ingest_event_webhook():
