@@ -47,7 +47,12 @@ Broadcasters and streaming platforms need commentary and graphics for every mark
 
 ---
 
-## Demo video script (target 1:50, must stay under 2:00)
+## Demo video
+
+A finished cut (1:41, 1080p, English voice-over, burned-in English captions) is produced by the scripts in `demo_video/`:
+`narration.py` (voice-over), `record.py` (Playwright drives a real seeded match), `cards.py` (title, closing and a live MCP call), `edit.py` (ffmpeg edit). Output: `demo_video/OmniPitch_demo.mp4` (not committed).
+
+### Original script (target 1:50, must stay under 2:00)
 
 No copyrighted music; use the app's own whistle and the synthetic commentary voice.
 
