@@ -69,7 +69,6 @@ class OmniPitchApp {
 
     // SSE stream (events + overlays) and where to resume it
     this.overlaySource = null;
-    this.nextSecond = 0;
     this.fullTime = false;
 
     // Canvas setup
@@ -93,7 +92,18 @@ class OmniPitchApp {
     this.currentDataTableFilter = "all";
     this.activeModalPlayerName = "";
     this.activeModalPlayerId = "";
-    this.momentumHoverMinute = null;
+    this.momentumHoverSlot = null;
+
+    // Personalisation & live commentary
+    this.favouriteClub = "";
+    this.speed = 1;
+    this.voiceOn = false;
+    this.speechQueue = [];
+    this.speaking = false;
+    this.lastLowerThirdAt = 0;
+    this.latestRecap = null;
+    this.phaseLabel = "Pre-match";
+    this.claimsVerified = 0;
 
     // Tactical formation 4-3-3 coordinates (normalized 0-100)
     this.homeFormation = [
@@ -129,6 +139,7 @@ class OmniPitchApp {
     this.renderPitch();
     this.setSpotlightAvatar("AVA-08", 8, "avalon_city");
     this.fetchMatchCenterOverview();
+    this.fetchAgentTelemetry();
 
     // Canvas text uses web fonts — redraw once they are ready
     if (document.fonts && document.fonts.ready) {
@@ -167,9 +178,40 @@ class OmniPitchApp {
     const streamBtn = document.getElementById("btn-stream-toggle");
     streamBtn.addEventListener("click", () => this.toggleStream());
 
-    // Speech Audio Commentary button
+    // Commentary voice toggle
     const speechBtn = document.getElementById("btn-speak-commentary");
-    speechBtn.addEventListener("click", () => this.speakCommentary());
+    speechBtn.addEventListener("click", () => this.toggleVoice());
+
+    // Favourite club: commentary takes that side
+    document.getElementById("club-select").addEventListener("change", (e) => {
+      this.favouriteClub = e.target.value;
+      if (this.isStreaming) this.restartStream();
+    });
+
+    // Playback pace
+    document.querySelectorAll("#speed-toggle .seg-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#speed-toggle .seg-btn").forEach((b) => b.classList.toggle("active", b === btn));
+        this.speed = Number(btn.dataset.speed) || 1;
+        if (this.isStreaming) this.restartStream();
+      });
+    });
+
+    // Commentary / raw event feed tabs
+    document.querySelectorAll(".feed-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".feed-tab").forEach((t) => t.classList.toggle("active", t === tab));
+        document.querySelectorAll(".feed-pane").forEach((p) => p.classList.toggle("hidden", p.id !== tab.dataset.feed));
+      });
+    });
+
+    // Match report
+    document.getElementById("btn-open-recap").addEventListener("click", () => this.openRecap());
+    document.getElementById("btn-close-recap").addEventListener("click", () => this.closeRecap());
+    document.getElementById("recap-modal").addEventListener("click", (e) => {
+      if (e.target.id === "recap-modal") this.closeRecap();
+    });
+    document.getElementById("btn-speak-recap").addEventListener("click", () => this.speakRecap());
 
     // Heatmap Toggle button
     const heatmapBtn = document.getElementById("btn-toggle-heatmap");
@@ -238,7 +280,7 @@ class OmniPitchApp {
       momCanvas.addEventListener("mouseleave", () => {
         const tip = document.getElementById("momentum-tooltip");
         if (tip) tip.classList.add("hidden");
-        this.momentumHoverMinute = null;
+        this.momentumHoverSlot = null;
         this.renderAttackMomentum();
       });
     }
@@ -316,6 +358,7 @@ class OmniPitchApp {
       if (e.key === "Escape") {
         this.closeTeamModal();
         this.closePlayerModal();
+        this.closeRecap();
       }
     });
 
@@ -416,10 +459,15 @@ class OmniPitchApp {
     document.getElementById("stream-icon").setAttribute("href", live ? "#i-pause" : "#i-play");
     document.getElementById("stream-text").textContent = live ? "Pause" : idleLabel;
     btn.classList.toggle("is-live", live);
-    document.body.classList.toggle("is-live", live);
-    document.querySelector(".live-label").textContent = live
-      ? "Live"
-      : (this.fullTime ? "Full time" : (this.eventsReceived ? "Paused" : "Pre-match"));
+    document.body.classList.toggle("is-live", live && !this.fullTime);
+    let label = this.phaseLabel;
+    if (!live && this.eventsReceived && !this.fullTime && this.phaseLabel !== "Half-time") label = "Paused";
+    document.querySelector(".live-label").textContent = label;
+  }
+
+  setPhase(label) {
+    this.phaseLabel = label;
+    document.querySelector(".live-label").textContent = label;
   }
 
   startStream() {
@@ -429,32 +477,39 @@ class OmniPitchApp {
     }
     this.isStreaming = true;
     this.setStreamUi(true);
-    this.playWhistleSound();
+    if (!this.eventsReceived) this.playWhistleSound();
 
     // One SSE stream carries each match_event followed by the overlay built from it,
-    // so pitch, scoreboard and commentary always describe the same moment.
+    // so pitch, scoreboard and commentary always describe the same moment. The match
+    // clock lives on the server, so reconnecting simply continues the match.
+    const delay = Math.max(0.25, 1 / this.speed).toFixed(2);
     let overlayUrl = `/api/match/${this.matchId}/overlays/stream?persona=${this.currentPersona}&lang=${this.currentLang}` +
-      `&delay=1.0&include_events=true&max_overlays=130&start_second=${this.nextSecond || 0}`;
-    if (this.currentPlayer) {
-      overlayUrl += `&player=${encodeURIComponent(this.currentPlayer)}`;
-    }
+      `&delay=${delay}&include_events=true&max_overlays=200`;
+    if (this.currentPlayer) overlayUrl += `&player=${encodeURIComponent(this.currentPlayer)}`;
+    if (this.favouriteClub) overlayUrl += `&club=${this.favouriteClub}`;
+
     const source = new EventSource(overlayUrl);
     this.overlaySource = source;
 
     source.addEventListener("match_event", (e) => this.handleMatchEvent(JSON.parse(e.data)));
     source.addEventListener("broadcast_overlay", (e) => this.handleBroadcastOverlay(JSON.parse(e.data)));
+    source.addEventListener("match_recap", (e) => {
+      const recap = JSON.parse(e.data);
+      // Half-time is a real break: pause the broadcast while the report is on screen
+      if (recap.kind === "half_time") this.stopStream("Second half");
+      this.showRecap(recap);
+    });
     source.addEventListener("stream_end", (e) => {
       const data = JSON.parse(e.data);
-      this.nextSecond = data.next_second;
       if (data.full_time) {
         this.fullTime = true;
         this.stopStream("Replay");
-        this.playWhistleSound();
       } else {
         this.stopStream();
       }
+      this.fetchAgentTelemetry();
     });
-    // Don't let EventSource silently reconnect and replay from a stale offset
+    // Don't let EventSource silently reconnect and replay
     source.onerror = () => {
       if (this.overlaySource === source && this.isStreaming) this.stopStream();
     };
@@ -463,7 +518,6 @@ class OmniPitchApp {
   stopStream(idleLabel = "Resume") {
     this.isStreaming = false;
     this.setStreamUi(false, idleLabel);
-
     if (this.overlaySource) this.overlaySource.close();
   }
 
@@ -474,8 +528,10 @@ class OmniPitchApp {
 
   async resetSimulation() {
     this.eventsReceived = 0;
-    this.nextSecond = 0;
     this.fullTime = false;
+    this.phaseLabel = "Pre-match";
+    this.claimsVerified = 0;
+    this.latestRecap = null;
     this.stopStream("Kick off");
     this.homeScore = 0;
     this.awayScore = 0;
@@ -486,11 +542,15 @@ class OmniPitchApp {
     this.activePlayerNode = null;
     this.latestOverlay = null;
     this.liveTableRows = [];
+    this.speechQueue = [];
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
 
     document.getElementById("home-score").textContent = "0";
     document.getElementById("away-score").textContent = "0";
     document.getElementById("match-clock").textContent = "00:00";
+    document.getElementById("added-badge").classList.add("hidden");
     document.getElementById("event-counter").textContent = "0 events";
+    document.getElementById("pipeline-claims").textContent = "0 claims verified";
     document.getElementById("overlay-time").textContent = "00:00";
     document.getElementById("overlay-headline").textContent = "Waiting for kick-off";
     document.getElementById("overlay-narrative").textContent =
@@ -499,29 +559,177 @@ class OmniPitchApp {
     document.getElementById("evidence-count").textContent = "0 events";
     document.getElementById("evidence-tags").innerHTML = `<span class="tag-empty">No citations yet</span>`;
     document.getElementById("telemetry-list").innerHTML = `
-      <div class="telemetry-placeholder">
-        <div class="pulse-text">Simulation reset — press Kick off.</div>
-      </div>
-    `;
+      <div class="telemetry-placeholder"><div class="pulse-text">Simulation reset — press Kick off.</div></div>`;
+    document.getElementById("commentary-list").innerHTML = `
+      <div class="telemetry-placeholder"><div class="pulse-text">Commentary starts at kick-off.</div></div>`;
+    this.setPhase("Pre-match");
     this.renderPitch();
 
     try {
       await fetch(`/api/match/${this.matchId}/reset`, { method: "POST" });
       await this.fetchMatchCenterOverview();
+      this.fetchAgentTelemetry();
     } catch (e) {
       console.warn("Error resetting match backend session:", e);
     }
   }
 
-  speakCommentary() {
-    if (!this.latestOverlay || !window.speechSynthesis) return;
+  /* -------------------------------------------------------------------------
+     Live commentary voice (Web Speech API, in the viewer's language)
+     ------------------------------------------------------------------------- */
 
-    const utterance = new SpeechSynthesisUtterance(this.latestOverlay.narrative);
-    const langMap = { en: "en-US", it: "it-IT", es: "es-ES", de: "de-DE" };
-    utterance.lang = langMap[this.currentLang] || "en-US";
-    utterance.rate = 1.05;
-    window.speechSynthesis.cancel();
+  toggleVoice() {
+    const btn = document.getElementById("btn-speak-commentary");
+    if (!window.speechSynthesis) {
+      btn.title = "Speech synthesis is not available in this browser";
+      return;
+    }
+    this.voiceOn = !this.voiceOn;
+    btn.setAttribute("aria-pressed", String(this.voiceOn));
+    if (!this.voiceOn) {
+      this.speechQueue = [];
+      window.speechSynthesis.cancel();
+      this.speaking = false;
+    } else if (this.latestOverlay && this.latestOverlay.commentary && this.latestOverlay.commentary.length) {
+      this.enqueueSpeech(this.latestOverlay.commentary[0]);
+    }
+  }
+
+  pickVoice(speaker) {
+    const langMap = { en: "en", it: "it", es: "es", de: "de" };
+    const prefix = langMap[this.currentLang] || "en";
+    const voices = (window.speechSynthesis.getVoices() || []).filter((v) => v.lang.toLowerCase().startsWith(prefix));
+    if (!voices.length) return null;
+    // Lead and co-commentator get different voices when the system has more than one
+    return speaker === "color" && voices.length > 1 ? voices[1] : voices[0];
+  }
+
+  enqueueSpeech(line) {
+    if (!this.voiceOn || !window.speechSynthesis || !line) return;
+    if (line.intensity >= 2) {
+      // Big moments jump the queue and cut routine chatter
+      this.speechQueue = this.speechQueue.filter((l) => l.intensity >= 2).slice(-2);
+      if (this.speaking && this.currentUtteranceIntensity < 2) window.speechSynthesis.cancel();
+      this.speechQueue.push(line);
+    } else if (!this.speaking && this.speechQueue.length === 0) {
+      // Routine play-by-play only when the booth is quiet, so the voice never lags the match
+      this.speechQueue.push(line);
+    }
+    this.drainSpeech();
+  }
+
+  drainSpeech() {
+    if (this.speaking || !this.speechQueue.length) return;
+    const line = this.speechQueue.shift();
+    const utterance = new SpeechSynthesisUtterance(line.text.replace(/[—–]/g, ", "));
+    const langMap = { en: "en-GB", it: "it-IT", es: "es-ES", de: "de-DE" };
+    utterance.lang = langMap[this.currentLang] || "en-GB";
+    const voice = this.pickVoice(line.speaker);
+    if (voice) utterance.voice = voice;
+    utterance.rate = (line.intensity === 3 ? 1.12 : 1.05) * Math.min(1 + (this.speed - 1) * 0.12, 1.35);
+    utterance.pitch = line.intensity === 3 ? 1.15 : (line.speaker === "color" ? 0.92 : 1.0);
+    this.currentUtteranceIntensity = line.intensity;
+    this.speaking = true;
+    const done = () => {
+      this.speaking = false;
+      document.querySelectorAll(".cm-line.speaking").forEach((el) => el.classList.remove("speaking"));
+      this.drainSpeech();
+    };
+    utterance.onend = done;
+    utterance.onerror = done;
+    const el = document.querySelector(`.cm-line[data-key="${line.event_id}-${line.speaker}"]`);
+    if (el) el.classList.add("speaking");
     window.speechSynthesis.speak(utterance);
+  }
+
+  appendCommentary(lines) {
+    const list = document.getElementById("commentary-list");
+    const placeholder = list.querySelector(".telemetry-placeholder");
+    if (placeholder) placeholder.remove();
+
+    lines.forEach((line) => {
+      const row = document.createElement("div");
+      row.className = `cm-line ${line.speaker} i${line.intensity}`;
+      row.dataset.key = `${line.event_id}-${line.speaker}`;
+      const who = line.speaker === "lead" ? "Commentator" : "Co-commentator";
+      const llm = line.source === "foundry-llm" ? `<span class="cm-source" title="Generated by the Foundry model and verified">· Foundry</span>` : "";
+      row.innerHTML = `
+        <span class="cm-minute">${esc(line.minute_label)}</span>
+        <span class="cm-speaker">${who}${llm}</span>
+        <span class="cm-text">${esc(line.text)}</span>
+      `;
+      list.insertBefore(row, list.firstChild);
+    });
+    while (list.children.length > 120) list.removeChild(list.lastChild);
+
+    // Lead first, then the co-commentator's explanation
+    lines.forEach((line) => this.enqueueSpeech(line));
+  }
+
+  speakRecap() {
+    if (!this.latestRecap || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    this.speechQueue = [];
+    const r = this.latestRecap;
+    const text = [r.title, ...r.paragraphs].join(". ");
+    const utterance = new SpeechSynthesisUtterance(text);
+    const langMap = { en: "en-GB", it: "it-IT", es: "es-ES", de: "de-DE" };
+    utterance.lang = langMap[r.language] || "en-GB";
+    const voice = this.pickVoice("lead");
+    if (voice) utterance.voice = voice;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  /* -------------------------------------------------------------------------
+     Recap (half-time / full-time report)
+     ------------------------------------------------------------------------- */
+
+  showRecap(recap) {
+    this.latestRecap = recap;
+    const kindLabel = recap.kind === "half_time" ? "Half-time report" : "Full-time report";
+    document.getElementById("recap-kind").textContent = kindLabel;
+    document.getElementById("recap-title").textContent = recap.title;
+    document.getElementById("recap-standfirst").textContent = recap.standfirst;
+
+    const st = recap.stats || {};
+    const pair = (o, digits = 0) => (o ? `${Number(o.home).toFixed(digits)}–${Number(o.away).toFixed(digits)}` : "—");
+    const moments = (recap.key_moments || []).map((m) => `
+      <li><span class="mono">${esc(m.minute_label)}</span><span>${esc(m.text.replace(m.minute_label, "").trim())}</span></li>`).join("");
+
+    // Key moments get their own list below, so skip the paragraph that repeats them
+    const firstMoment = (recap.key_moments || [])[0];
+    const paragraphs = recap.paragraphs.filter((p) => !(firstMoment && p.includes(firstMoment.text)));
+    document.getElementById("recap-body").innerHTML = `
+      ${paragraphs.map((p) => `<p>${esc(p)}</p>`).join("")}
+      <div class="recap-stats">
+        <div><span class="num">${pair(st.score)}</span><span class="lbl">Score</span></div>
+        <div><span class="num">${pair(st.xg, 2)}</span><span class="lbl">Expected goals</span></div>
+        <div><span class="num">${pair(st.shots)}</span><span class="lbl">Shots</span></div>
+        <div><span class="num">${pair(st.possession)}</span><span class="lbl">Possession %</span></div>
+      </div>
+      ${moments ? `<ul class="recap-moments">${moments}</ul>` : ""}
+    `;
+    const ver = recap.verification;
+    document.getElementById("recap-source").textContent = recap.source === "foundry-llm"
+      ? `Written by the Foundry model · ${ver ? ver.claims_checked : 0} claims verified`
+      : `Written from the event log · evidence ${recap.evidence_event_ids.join(", ") || "—"}`;
+
+    document.getElementById("recap-modal").classList.remove("hidden");
+    if (this.voiceOn) this.speakRecap();
+  }
+
+  async openRecap() {
+    try {
+      const kind = this.fullTime || this.phaseLabel === "2nd half" ? "full_time" : "half_time";
+      const res = await fetch(`/api/match/${this.matchId}/recap?kind=${kind}&lang=${this.currentLang}&persona=${this.currentPersona}`);
+      if (res.ok) this.showRecap(await res.json());
+    } catch (err) {
+      console.warn("Recap fetch failed:", err);
+    }
+  }
+
+  closeRecap() {
+    document.getElementById("recap-modal").classList.add("hidden");
   }
 
   /* -------------------------------------------------------------------------
@@ -531,26 +739,37 @@ class OmniPitchApp {
   handleBroadcastOverlay(overlay) {
     this.latestOverlay = overlay;
 
-    // 1. Animate Multi-Agent Pipeline sequence
-    this.pulsePipeline();
+    // 1. Pipeline: light up each agent with its measured time
+    this.pulsePipeline(overlay.agent_trace || []);
+    if (overlay.verification) {
+      this.claimsVerified += overlay.verification.claims_checked - overlay.verification.rejected.length;
+      document.getElementById("pipeline-claims").textContent = `${this.claimsVerified} claims verified`;
+    }
 
-    // 2. Update Overlay card content (re-trigger the entrance animation)
-    const body = document.querySelector(".broadcast-body");
-    body.classList.remove("flash");
-    void body.offsetWidth;
-    body.classList.add("flash");
+    // 2. Live commentary
+    if (overlay.commentary && overlay.commentary.length) this.appendCommentary(overlay.commentary);
 
-    document.getElementById("overlay-time").textContent = overlay.match_time;
-    document.getElementById("overlay-headline").textContent = overlay.headline;
-    document.getElementById("overlay-narrative").textContent = overlay.narrative;
-    document.getElementById("overlay-genby").textContent = overlay.generated_by ? `via ${overlay.generated_by}` : "";
+    // 3. Lower third: must-show moments at once, notable ones after a 2.5 s dwell,
+    //    routine insight at most every 6 s, so on-screen text always stays readable
+    const now = Date.now();
+    const priority = overlay.display_priority || 1;
+    const dwell = now - this.lastLowerThirdAt;
+    if (priority >= 3 || (priority === 2 && dwell > 2500) || dwell > 6000) {
+      this.lastLowerThirdAt = now;
+      const body = document.querySelector(".broadcast-body");
+      body.classList.remove("flash");
+      void body.offsetWidth;
+      body.classList.add("flash");
 
-    // 3. Grounding citations
-    const tagsContainer = document.getElementById("evidence-tags");
-    const ids = overlay.evidence_event_ids || [];
-    document.getElementById("evidence-count").textContent = `${ids.length} event${ids.length === 1 ? "" : "s"}`;
-    tagsContainer.innerHTML = "";
-    if (ids.length > 0) {
+      document.getElementById("overlay-time").textContent = overlay.minute_label || overlay.match_time;
+      document.getElementById("overlay-headline").textContent = overlay.headline;
+      document.getElementById("overlay-narrative").textContent = overlay.narrative;
+      document.getElementById("overlay-genby").textContent = overlay.generated_by ? `via ${overlay.generated_by}` : "";
+
+      const tagsContainer = document.getElementById("evidence-tags");
+      const ids = overlay.evidence_event_ids || [];
+      document.getElementById("evidence-count").textContent = `${ids.length} event${ids.length === 1 ? "" : "s"}`;
+      tagsContainer.innerHTML = "";
       ids.forEach((eid, i) => {
         const tag = document.createElement("span");
         tag.className = "tag-event";
@@ -558,18 +777,17 @@ class OmniPitchApp {
         tag.textContent = eid;
         tagsContainer.appendChild(tag);
       });
-    } else {
-      tagsContainer.innerHTML = `<span class="tag-empty">No citations for this moment</span>`;
+      if (!ids.length) tagsContainer.innerHTML = `<span class="tag-empty">No citations for this moment</span>`;
     }
 
-    // 4. Update Trace Telemetry badge
+    // 4. Trace badge
     if (overlay.trace) {
-      const ms = overlay.trace.latency_ms || 12.0;
-      const model = overlay.trace.model_name || "gpt-4o";
-      document.getElementById("trace-badge").textContent = `${model} · ${ms} ms`;
+      const v = overlay.verification;
+      document.getElementById("trace-badge").textContent =
+        `${overlay.trace.model_name} · ${overlay.trace.latency_ms} ms${v ? ` · ${v.claims_checked} claims checked` : ""}`;
     }
 
-    // 5. Update Player Spotlight HUD if present
+    // 5. Player Spotlight HUD
     if (overlay.player_focus) {
       const pf = overlay.player_focus;
       document.getElementById("spotlight-name").textContent = pf.player_name;
@@ -581,10 +799,10 @@ class OmniPitchApp {
       document.getElementById("spotlight-narrative").textContent = pf.spotlight_narrative;
     }
 
-    // 6. Update JSON Inspector code
+    // 6. JSON inspector
     document.getElementById("json-code").textContent = JSON.stringify(overlay, null, 2);
 
-    // 7. Update Tactical Gauges
+    // 7. Tactical gauges
     if (overlay.metrics) {
       const ctrl = overlay.metrics.control_vs_chaos_index ?? 0.5;
       const press = overlay.metrics.defensive_pressure_index ?? 0.5;
@@ -592,10 +810,8 @@ class OmniPitchApp {
 
       document.getElementById("val-control").textContent = `${Math.round(ctrl * 100)}% Control`;
       document.getElementById("bar-control").style.width = `${Math.round(ctrl * 100)}%`;
-
       document.getElementById("val-pressure").textContent = `${press.toFixed(2)} (${press > 0.6 ? "High" : "Moderate"})`;
       document.getElementById("bar-pressure").style.width = `${Math.round(press * 100)}%`;
-
       document.getElementById("val-tempo").textContent = tempo.replace(/-/g, " ");
     }
   }
@@ -615,42 +831,50 @@ class OmniPitchApp {
   handleMatchEvent(event) {
     this.eventsReceived += 1;
     document.getElementById("event-counter").textContent = `${this.eventsReceived} events`;
+    document.getElementById("match-clock").textContent = event.match_clock;
 
-    // Clock
-    const mm = String(event.minute).padStart(2, "0");
-    const ss = String(event.second).padStart(2, "0");
-    document.getElementById("match-clock").textContent = `${mm}:${ss}`;
-    this.nextSecond = event.minute * 60 + event.second + 1;
-
-    // Score if Goal
-    if (event.event_type === "goal") {
-      const isHome = event.team_id === "avalon_city";
-      if (isHome) this.homeScore += 1;
-      else this.awayScore += 1;
-      const digit = document.getElementById(isHome ? "home-score" : "away-score");
-      digit.textContent = isHome ? this.homeScore : this.awayScore;
-      digit.classList.remove("bump");
-      void digit.offsetWidth;
-      digit.classList.add("bump");
+    // Match phases
+    const badge = document.getElementById("added-badge");
+    if (event.event_type === "match_start") {
+      this.setPhase(event.period === 1 ? "1st half" : "2nd half");
+      badge.classList.add("hidden");
+      if (event.period === 2) this.playWhistleSound();
+    } else if (event.event_type === "added_time") {
+      badge.textContent = `+${event.added_time_minutes}`;
+      badge.classList.remove("hidden");
+    } else if (event.event_type === "half_time") {
+      this.setPhase("Half-time");
+      this.playWhistleSound();
+    } else if (event.event_type === "match_end") {
+      this.setPhase("Full time");
+      this.playWhistleSound();
     }
 
-    // Append to telemetry list
-    this.appendTelemetryRow(event, `${mm}:${ss}`);
+    // Score comes from the event itself, so a reconnect can never double count
+    [["home-score", event.score_home, "homeScore"], ["away-score", event.score_away, "awayScore"]].forEach(([id, value, key]) => {
+      if (value !== this[key]) {
+        this[key] = value;
+        const digit = document.getElementById(id);
+        digit.textContent = value;
+        digit.classList.remove("bump");
+        void digit.offsetWidth;
+        digit.classList.add("bump");
+      }
+    });
 
-    // Update Pro Match Center Live Data Table
-    this.prependLiveTableRow(event, `${mm}:${ss}`);
+    this.appendTelemetryRow(event, event.match_clock);
+    this.prependLiveTableRow(event, event.match_clock);
 
-    // Update Pitch Ball & Vectors
+    // Pitch: ball & vectors
     this.currentBall = {
       x: event.end_coordinates ? event.end_coordinates.x : event.start_coordinates.x,
       y: event.end_coordinates ? event.end_coordinates.y : event.start_coordinates.y,
     };
+    if (["match_start", "half_time", "match_end"].includes(event.event_type)) this.passVectors = [];
 
-    if (event.player) {
-      this.activePlayerNode = event.player.name;
-    }
+    if (event.player) this.activePlayerNode = event.player.name;
 
-    if (event.start_coordinates && event.end_coordinates) {
+    if (event.start_coordinates && event.end_coordinates && event.player) {
       this.passVectors.push({
         start: event.start_coordinates,
         end: event.end_coordinates,
@@ -659,6 +883,7 @@ class OmniPitchApp {
         team: event.team_id,
         xg: event.expected_goals,
         is_sprint: event.is_sprint_burst,
+        failed: event.event_type === "pass" && !event.is_successful,
         timestamp: Date.now(),
       });
       if (this.passVectors.length > 8) this.passVectors.shift();
@@ -666,14 +891,14 @@ class OmniPitchApp {
 
     this.animateBall();
 
-    // Dynamically update match center overview on live stream events
-    if (this.eventsReceived % 2 === 0 || event.event_type === "goal" || event.event_type === "shot") {
-      this.fetchMatchCenterOverview();
-    }
+    // Keep the match centre in step with the stream
+    const important = ["goal", "shot", "foul", "half_time", "match_end", "added_time"].includes(event.event_type);
+    if (this.eventsReceived % 3 === 0 || important) this.fetchMatchCenterOverview();
+    if (this.eventsReceived % 10 === 0 || important) this.fetchAgentTelemetry();
   }
 
   animateBall() {
-    this.ballAnim = { from: { ...this.displayBall }, to: { ...this.currentBall }, start: performance.now(), dur: 520 };
+    this.ballAnim = { from: { ...this.displayBall }, to: { ...this.currentBall }, start: performance.now(), dur: 520 / Math.min(this.speed, 2) };
     const step = (now) => {
       if (!this.ballAnim) return;
       const t = Math.min((now - this.ballAnim.start) / this.ballAnim.dur, 1);
@@ -698,42 +923,81 @@ class OmniPitchApp {
     row.className = "telemetry-item";
 
     const badgeClass = `tele-badge tele-badge-${event.event_type.replace(/_/g, "")}`;
-    const playerName = event.player ? event.player.name : "Team";
     const side = event.team_id === "avalon_city" ? "home" : "away";
+    let who = event.player ? event.player.name : TEAM_NAMES[event.team_id] || "Match";
+    if (event.event_type === "added_time") who = `+${event.added_time_minutes} min`;
+    if (["half_time", "match_end"].includes(event.event_type)) who = `${event.score_home}–${event.score_away}`;
 
     const metrics = [];
     if (event.expected_goals) metrics.push(`xG ${event.expected_goals}`);
+    if (event.shot_outcome) metrics.push(event.shot_outcome.replace("_", " "));
+    if (event.card) metrics.push(`${event.card} card`);
     if (event.ball_speed_kmh) metrics.push(`${event.ball_speed_kmh} km/h`);
-    if (event.pass_distance_m) metrics.push(`${event.pass_distance_m} m · diff ${event.pass_difficulty_rating}`);
+    if (event.pass_distance_m) metrics.push(`${event.pass_distance_m} m · diff ${event.pass_difficulty_rating}${event.is_successful ? "" : " · lost"}`);
     if (event.is_sprint_burst) metrics.push(`<span class="tele-sprint">sprint</span>`);
 
     row.innerHTML = `
       <div class="tele-left">
-        <span class="tele-time">${timecode}</span>
+        <span class="tele-time">${esc(timecode)}</span>
         <span class="${badgeClass}">${esc(event.event_type.replace(/_/g, " "))}</span>
         <span class="tele-team ${side}"></span>
-        <span>${esc(playerName)}</span>
+        <span>${esc(who)}</span>
       </div>
       <div class="tele-metrics">${metrics.join(" · ")}</div>
     `;
 
     list.insertBefore(row, list.firstChild);
-    if (list.children.length > 40) {
-      list.removeChild(list.lastChild);
+    if (list.children.length > 60) list.removeChild(list.lastChild);
+  }
+
+  pulsePipeline(trace) {
+    const byAgent = {};
+    trace.forEach((t) => { byAgent[t.agent] = t; });
+    ["ingest", "tactical_analyst", "lead_commentator", "narrator", "verifier", "broadcast"].forEach((id, idx) => {
+      setTimeout(() => {
+        const el = document.getElementById(`step-${id}`);
+        if (!el) return;
+        const t = byAgent[id];
+        const role = el.querySelector(".step-role");
+        if (t) {
+          role.textContent = `${t.ms < 1 ? t.ms.toFixed(2) : t.ms.toFixed(1)} ms${t.detail === "foundry-llm" ? " · Foundry" : ""}`;
+          role.classList.add("timed");
+        }
+        el.classList.add("pulse", "active");
+        setTimeout(() => el.classList.remove("pulse"), 420);
+      }, idx * Math.max(40, 110 / this.speed));
+    });
+  }
+
+  async fetchAgentTelemetry() {
+    try {
+      const res = await fetch(`/api/match/${this.matchId}/agents/telemetry`);
+      if (!res.ok) return;
+      const t = await res.json();
+      this.agentTelemetry = t;
+      document.getElementById("sys-status-text").textContent = t.foundry_configured ? `Foundry · ${t.model}` : "Local agents";
+      document.getElementById("sys-status").title = t.foundry_configured
+        ? "Key moments and recaps are generated by the Foundry model and verified"
+        : "No Foundry endpoint configured: commentary comes from the verified phrase bank";
+      this.renderTelemetryRibbon(t);
+    } catch (err) {
+      console.warn("Telemetry fetch failed:", err);
     }
   }
 
-  pulsePipeline() {
-    const steps = ["step-ingest", "step-analyst", "step-narrator", "step-verifier", "step-broadcast"];
-    steps.forEach((id, idx) => {
-      setTimeout(() => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.classList.add("pulse", "active");
-          setTimeout(() => el.classList.remove("pulse"), 520);
-        }
-      }, idx * 130);
-    });
+  renderTelemetryRibbon(t) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set("tel-grounding", t.claims_checked ? `${(t.grounding_rate * 100).toFixed(1)}%` : "—");
+    set("tel-claims", t.claims_checked.toLocaleString());
+    set("tel-fallbacks", t.fallbacks_used);
+    set("tel-latency", t.events_processed ? `${t.pipeline_latency_ms.toFixed(2)} ms` : "—");
+    const status = document.getElementById("foundry-model-status");
+    if (status) {
+      status.classList.toggle("live", t.foundry_configured);
+      status.innerHTML = t.foundry_configured
+        ? `<b>Foundry model live:</b> <code>${esc(t.model)}</code> · ${t.llm_attempts} calls on key moments, ${t.llm_lines_accepted} lines accepted, ${t.llm_lines_rejected} rejected by the verifier.`
+        : `<b>Foundry endpoint not configured</b> — every line comes from the multilingual phrase bank. Set <code>AZURE_AI_FOUNDRY_ENDPOINT</code>, <code>AZURE_AI_FOUNDRY_API_KEY</code> and <code>AZURE_OPENAI_DEPLOYMENT_NAME</code> to let the commentator and recap writer use your deployment; the verifier gates their output either way.`;
+    }
   }
 
   /* -------------------------------------------------------------------------
@@ -891,14 +1155,14 @@ class OmniPitchApp {
       const p2 = this.toCanvasCoords(vec.end.x, vec.end.y);
       const isShot = vec.type === "shot" || vec.type === "goal";
       const alpha = 0.25 + 0.75 * ((i + 1) / n);
-      const base = isShot ? C.accent : (vec.team === "avalon_city" ? "#9fd4ff" : "#ffb0a8");
+      const base = isShot ? C.accent : (vec.failed ? "#8a8a85" : (vec.team === "avalon_city" ? "#9fd4ff" : "#ffb0a8"));
 
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = base;
       ctx.fillStyle = base;
       ctx.lineWidth = isShot ? 2.5 : 1.6;
-      if (vec.difficulty > 0.6 && !isShot) ctx.setLineDash([5, 4]);
+      if ((vec.difficulty > 0.6 || vec.failed) && !isShot) ctx.setLineDash([5, 4]);
 
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
@@ -1085,12 +1349,19 @@ class OmniPitchApp {
     const plotW = w - padL - padR;
     const half = (h - padT - padB) / 2;
     const centerY = padT + half;
-    const lastMinute = pts.length ? pts[pts.length - 1].minute : 0;
-    const maxMin = Math.max(90, lastMinute);
-    const slotW = plotW / maxMin;
-    this.momGeom = { padL, slotW, maxMin, plotW };
 
-    const xFor = (m) => padL + (m / maxMin) * plotW;
+    // One slot per played minute; a blank slot separates the halves. Until the match is
+    // over, reserve room for a typical 90 + stoppage so the chart fills left to right.
+    const slots = [];
+    pts.forEach((pt, i) => {
+      if (i > 0 && pt.period !== pts[i - 1].period) slots.push(null);
+      slots.push(pt);
+    });
+    const finished = this.matchCenterData.status && this.matchCenterData.status.phase === "full_time";
+    const totalSlots = finished ? Math.max(slots.length, 1) : Math.max(slots.length, 98);
+    const slotW = plotW / totalSlots;
+    this.momGeom = { padL, slotW, slots };
+    const xFor = (i) => padL + i * slotW;
 
     // Gridlines
     ctx.strokeStyle = C.gridLine;
@@ -1101,25 +1372,6 @@ class OmniPitchApp {
       ctx.lineTo(w - padR, centerY - k * half);
       ctx.stroke();
     });
-
-    // Minute axis
-    ctx.font = `500 11px ${FONT.mono}`;
-    ctx.fillStyle = C.text3;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    for (let m = 0; m <= maxMin; m += 15) {
-      ctx.fillText(m === 45 ? "HT" : `${m}'`, xFor(m), h - padB + 10);
-    }
-
-    // Half-time divider
-    ctx.save();
-    ctx.setLineDash([3, 4]);
-    ctx.strokeStyle = "rgba(236,235,230,0.18)";
-    ctx.beginPath();
-    ctx.moveTo(xFor(45), padT);
-    ctx.lineTo(xFor(45), h - padB);
-    ctx.stroke();
-    ctx.restore();
 
     // Team side labels
     ctx.textAlign = "left";
@@ -1136,21 +1388,63 @@ class OmniPitchApp {
       ctx.moveTo(padL, centerY);
       ctx.lineTo(w - padR, centerY);
       ctx.stroke();
+      ctx.font = `500 11px ${FONT.mono}`;
       ctx.fillStyle = C.text3;
-      ctx.font = `500 13px ${FONT.mono}`;
       ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      [[0, "0'"], [0.25, "22'"], [0.5, "HT"], [0.75, "67'"], [1, "90'"]].forEach(([f, l]) => ctx.fillText(l, padL + f * plotW, h - padB + 10));
+      ctx.font = `500 13px ${FONT.mono}`;
+      ctx.textBaseline = "middle";
       ctx.fillText("Momentum builds once the match kicks off", padL + plotW / 2, centerY - 22);
       return;
     }
 
+    // Stoppage time shading and half-time divider
+    slots.forEach((pt, i) => {
+      if (pt === null) {
+        ctx.save();
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = "rgba(236,235,230,0.25)";
+        ctx.beginPath();
+        ctx.moveTo(xFor(i) + slotW / 2, padT);
+        ctx.lineTo(xFor(i) + slotW / 2, h - padB);
+        ctx.stroke();
+        ctx.restore();
+      } else if (pt.is_stoppage) {
+        ctx.fillStyle = "rgba(245,165,36,0.07)";
+        ctx.fillRect(xFor(i), padT, slotW, h - padT - padB);
+      }
+    });
+
+    // Axis labels: every 15', stoppage start, half-time
+    ctx.font = `500 11px ${FONT.mono}`;
+    ctx.fillStyle = C.text3;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    let lastLabelX = -Infinity;
+    slots.forEach((pt, i) => {
+      let label = null;
+      if (pt === null) label = "HT";
+      else if (!pt.is_stoppage && pt.minute % 15 === 0 && pt.minute !== 45 && pt.minute !== 90) label = `${pt.minute}'`;
+      else if (pt.is_stoppage && i > 0 && slots[i - 1] && !slots[i - 1].is_stoppage) label = pt.period === 1 ? "45'" : "90'";
+      else if (i === 0) label = "0'";
+      const x = xFor(i) + slotW / 2;
+      if (label && x - lastLabelX > 26) {
+        ctx.fillStyle = pt && pt.is_stoppage ? C.warn : C.text3;
+        ctx.fillText(label, x, h - padB + 10);
+        lastLabelX = x;
+      }
+    });
+
     // Bars
     const gap = slotW > 6 ? 2 : 1;
-    pts.forEach((pt) => {
-      const x = xFor(pt.minute - 1) + gap / 2;
+    slots.forEach((pt, i) => {
+      if (!pt) return;
+      const x = xFor(i) + gap / 2;
       const bw = Math.max(slotW - gap, 1);
       const mag = Math.min(Math.abs(pt.value), 100) / 100;
       const barH = mag * half;
-      const hovered = this.momentumHoverMinute === pt.minute;
+      const hovered = this.momentumHoverSlot === i;
       const alpha = hovered ? 1 : 0.35 + 0.6 * mag;
 
       if (pt.value > 0) {
@@ -1166,21 +1460,24 @@ class OmniPitchApp {
       }
     });
 
-    // Trend line (5-minute rolling mean)
+    // Trend line (5-minute rolling mean), drawn per half
     ctx.save();
     ctx.strokeStyle = "rgba(236,235,230,0.85)";
     ctx.lineWidth = 1.5;
     ctx.lineJoin = "round";
-    ctx.beginPath();
-    pts.forEach((pt, i) => {
-      const win = pts.slice(Math.max(0, i - 2), i + 3);
-      const avg = win.reduce((s, p) => s + p.value, 0) / win.length;
-      const x = xFor(pt.minute - 0.5);
-      const y = centerY - (Math.max(-100, Math.min(100, avg)) / 100) * half;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    [1, 2].forEach((period) => {
+      const idx = slots.map((pt, i) => (pt && pt.period === period ? i : -1)).filter((i) => i >= 0);
+      if (idx.length < 2) return;
+      ctx.beginPath();
+      idx.forEach((i, k) => {
+        const win = idx.slice(Math.max(0, k - 2), k + 3).map((j) => slots[j].value);
+        const avg = win.reduce((s, v) => s + v, 0) / win.length;
+        const y = centerY - (Math.max(-100, Math.min(100, avg)) / 100) * half;
+        if (k === 0) ctx.moveTo(xFor(i) + slotW / 2, y);
+        else ctx.lineTo(xFor(i) + slotW / 2, y);
+      });
+      ctx.stroke();
     });
-    ctx.stroke();
     ctx.restore();
 
     // Zero line
@@ -1192,12 +1489,12 @@ class OmniPitchApp {
     ctx.stroke();
 
     // Incident markers
-    pts.forEach((pt) => {
-      if (!pt.incidents || !pt.incidents.length) return;
-      const cx = xFor(pt.minute - 0.5);
+    slots.forEach((pt, i) => {
+      if (!pt || !pt.incidents || !pt.incidents.length) return;
+      const cx = xFor(i) + slotW / 2;
       const barH = (Math.min(Math.abs(pt.value), 100) / 100) * half;
       pt.incidents.forEach((inc, k) => {
-        const up = pt.value >= 0;
+        const up = inc.team === "avalon_city";
         const cy = up ? Math.max(centerY - barH - 9 - k * 14, padT + 5) : Math.min(centerY + barH + 9 + k * 14, h - padB - 5);
         this.drawIncidentMarker(ctx, inc.type, cx, cy);
       });
@@ -1214,8 +1511,8 @@ class OmniPitchApp {
       ctx.arc(x, y, 5.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-    } else if (type === "card") {
-      ctx.fillStyle = "#ffd23f";
+    } else if (type === "yellow_card" || type === "red_card" || type === "card") {
+      ctx.fillStyle = type === "red_card" ? C.bad : "#ffd23f";
       ctx.fillRect(x - 3.5, y - 5, 7, 10);
     } else {
       ctx.fillStyle = C.warn;
@@ -1232,19 +1529,16 @@ class OmniPitchApp {
   handleMomentumHover(e) {
     const canvas = document.getElementById("momentum-canvas");
     const tip = document.getElementById("momentum-tooltip");
-    if (!canvas || !tip || !this.matchCenterData || !this.momGeom) return;
+    if (!canvas || !tip || !this.momGeom) return;
 
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    const pts = this.matchCenterData.attack_momentum || [];
-    if (!pts.length) return;
-
-    const minute = Math.floor((mx - this.momGeom.padL) / this.momGeom.slotW) + 1;
-    const pt = pts.find((p) => p.minute === minute);
+    const slot = Math.floor((mx - this.momGeom.padL) / this.momGeom.slotW);
+    const pt = this.momGeom.slots[slot];
 
     if (pt) {
-      if (this.momentumHoverMinute !== minute) {
-        this.momentumHoverMinute = minute;
+      if (this.momentumHoverSlot !== slot) {
+        this.momentumHoverSlot = slot;
         this.renderAttackMomentum();
       }
       const domName = pt.value > 5 ? "Avalon City" : (pt.value < -5 ? "Solaria Rovers" : "Even");
@@ -1253,7 +1547,7 @@ class OmniPitchApp {
         : "";
 
       tip.innerHTML = `
-        <div class="tt-title">Minute ${pt.minute}'</div>
+        <div class="tt-title">${esc(pt.label)}${pt.is_stoppage ? " · stoppage time" : ""}</div>
         <div>Dominance <b>${domName}</b> (${pt.value > 0 ? "+" : ""}${pt.value})</div>
         ${incidentText}
       `;
@@ -1262,8 +1556,8 @@ class OmniPitchApp {
       tip.classList.remove("hidden");
     } else {
       tip.classList.add("hidden");
-      if (this.momentumHoverMinute !== null) {
-        this.momentumHoverMinute = null;
+      if (this.momentumHoverSlot !== null) {
+        this.momentumHoverSlot = null;
         this.renderAttackMomentum();
       }
     }
@@ -1286,6 +1580,8 @@ class OmniPitchApp {
       { key: "corners", label: "Corners" },
       { key: "tackles_won", label: "Tackles won", customVal: true },
       { key: "fouls", label: "Fouls" },
+      { key: "yellow_cards", label: "Yellow cards" },
+      { key: "red_cards", label: "Red cards" },
     ];
 
     container.innerHTML = metrics.map((m) => {
@@ -1541,8 +1837,8 @@ class OmniPitchApp {
 
     if (hovered) {
       tip.innerHTML = `
-        <div class="tt-title">${esc(hovered.player_name)} · ${hovered.minute}'</div>
-        <div>Outcome <b>${esc(hovered.outcome)}</b></div>
+        <div class="tt-title">${esc(hovered.player_name)} · ${esc(hovered.minute_label || hovered.minute + "'")}</div>
+        <div>Outcome <b>${esc(hovered.outcome.replace("_", " "))}</b></div>
         <div>xG <b>${(hovered.xg || 0).toFixed(2)}</b> · <b>${hovered.shot_speed_kmh ?? "—"}</b> km/h</div>
       `;
       tip.style.left = `${Math.min(mx + 14, rect.width - 200)}px`;
@@ -1562,17 +1858,18 @@ class OmniPitchApp {
 
     list.classList.toggle("is-empty", !timeline.length);
     if (!timeline.length) {
-      list.innerHTML = `<div class="empty-state">No incidents yet. Goals and fouls appear here as the match unfolds.</div>`;
+      list.innerHTML = `<div class="empty-state">No incidents yet. Goals, cards, stoppage time and the whistles appear here as the match unfolds.</div>`;
       return;
     }
 
     list.innerHTML = timeline.map((item) => {
-      const sideClass = item.is_home ? "home" : "away";
-      const iconClass = item.type === "goal" ? "ti-goal" : (item.type === "card" || item.type === "foul" ? "ti-card" : "ti-chance");
+      const icons = { goal: "ti-goal", yellow_card: "ti-card", red_card: "ti-red", added_time: "ti-added" };
+      const iconClass = icons[item.type] || "ti-whistle";
+      const sideClass = item.is_phase ? "phase" : (item.is_home ? "home" : "away");
 
       return `
-        <div class="timeline-event-card ${sideClass}">
-          <span class="timeline-minute">${item.minute}'</span>
+        <div class="timeline-event-card ${sideClass}" title="${esc(item.event_id)}">
+          <span class="timeline-minute">${esc(item.minute_label || item.minute + "'")}</span>
           <span class="timeline-icon"><span class="${iconClass}"></span></span>
           <div class="timeline-details">
             <span class="timeline-title">${esc(item.title)}</span>
@@ -1768,7 +2065,7 @@ class OmniPitchApp {
       // Populate Standings Table
       const tbody = document.getElementById("standings-tbody");
       if (tbody) {
-        const zoneClass = { champions_league: "zone-cl", europa_league: "zone-el", relegation: "zone-rel" };
+        const zoneClass = { continental_elite: "zone-cl", continental_cup: "zone-el", relegation: "zone-rel" };
         tbody.innerHTML = table.map((club) => {
           const isSelected = club.team_id === this.currentModalTeamId;
           const formDots = (club.form || []).map((f) => {
@@ -2113,6 +2410,7 @@ class OmniPitchApp {
       if (agentsRes.ok) {
         this.foundryAgentsData = await agentsRes.json();
         this.renderFoundryAgents(this.foundryAgentsData.agents || []);
+        if (this.foundryAgentsData.telemetry) this.renderTelemetryRibbon(this.foundryAgentsData.telemetry);
       }
 
       if (previewRes.ok) {
@@ -2129,19 +2427,19 @@ class OmniPitchApp {
     if (!grid) return;
 
     grid.innerHTML = agents.map((agent) => {
-      const toolsText = agent.tools ? agent.tools.map((t) => t.replace(/_/g, " ")).slice(0, 2).join(", ") : "blackboard memory";
-      const handoffTarget = agent.handoff_to ? agent.handoff_to.replace(/_/g, " ") : "client";
-
+      const usesModel = (agent.execution || "").startsWith("foundry");
+      const tools = (agent.tools || []).slice(0, 2).join(", ");
+      const ms = typeof agent.latency_ms === "number" && agent.latency_ms > 0 ? `${agent.latency_ms.toFixed(2)} ms avg` : "idle";
       return `
         <div class="agent-pipeline-card">
           <div class="agent-card-top">
-            <span class="agent-model-pill">${esc(agent.model || "gpt-4o")}</span>
+            <span class="agent-model-pill">${usesModel ? "Foundry model" : "code"}</span>
             <span class="agent-status-dot" title="Online"></span>
           </div>
           <div class="agent-name">${esc(agent.name)}</div>
           <div class="agent-role-pill">${esc(agent.role)}</div>
-          <div class="agent-tools-list">tools: ${esc(toolsText)}</div>
-          <div class="agent-handoff-flow">→ ${esc(handoffTarget)} · ${agent.latency_ms || 25} ms</div>
+          <div class="agent-tools-list">${esc(tools)}</div>
+          <div class="agent-handoff-flow">→ ${esc(agent.handoff_to)} · ${ms}</div>
         </div>
       `;
     }).join("");

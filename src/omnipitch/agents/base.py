@@ -30,6 +30,8 @@ class NarrativeDraft(BaseModel):
     persona: str  # 'analyst' or 'fan'
     language: str  # 'en', 'it', 'es', etc.
     cited_event_ids: List[str]
+    insight_kind: str = "balanced-contest"
+    is_color_moment: bool = False
 
 
 class VerificationResult(BaseModel):
@@ -38,6 +40,8 @@ class VerificationResult(BaseModel):
     confidence: float
     verified_event_ids: List[str]
     notes: str
+    claims_checked: int = 0
+    rejected_claims: List[str] = Field(default_factory=list)
 
 
 class BroadcastOverlayPayload(BaseModel):
@@ -55,6 +59,15 @@ class BroadcastOverlayPayload(BaseModel):
     player_focus: Optional[Dict[str, Any]] = None
     trace: Optional[Dict[str, Any]] = None
     generated_by: str = "omnipitch-multiagent"
+
+    # Live broadcast extras
+    event_type: Optional[str] = None
+    minute_label: Optional[str] = None
+    insight_kind: Optional[str] = None
+    display_priority: int = Field(1, ge=1, le=3, description="1 routine, 2 notable, 3 must-show")
+    commentary: List[Dict[str, Any]] = Field(default_factory=list, description="Live commentary lines (lead + color)")
+    agent_trace: List[Dict[str, Any]] = Field(default_factory=list, description="Per-agent handoff timing and status")
+    verification: Optional[Dict[str, Any]] = None
 
 
 class BaseAgent(ABC):

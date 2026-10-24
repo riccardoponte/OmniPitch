@@ -21,7 +21,6 @@ if exist ".venv\Scripts\python.exe" (
 
 echo [*] Starting OmniPitch API and Web Server...
 echo [*] Dashboard URL: http://127.0.0.1:8000
-echo [*] Interactive Video Tutorial: OmniPitch_Tutorial_Player.html
 echo [*] Opening your browser in 2 seconds...
 echo.
 echo =====================================================================

@@ -1,88 +1,82 @@
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/ai-agents/main/schemas/agent-manifest-v1.json",
   "project_name": "OmniPitch-Match-Intelligence",
-  "version": "1.0.0",
-  "runtime": "Azure AI Foundry Agent Service",
-  "orchestration_pattern": "Blackboard-Shared-State-with-Sequential-Handoff",
-  "cloud_platform": "Microsoft Azure",
-  "primary_model": "gpt-4o",
+  "version": "2.0.0",
+  "runtime": "Python agents on Azure Container Apps, Microsoft Foundry (Azure OpenAI) model deployment",
+  "orchestration_pattern": "Blackboard shared state with sequential handoff and verifier gate",
+  "primary_model": "gpt-4o-mini (Foundry deployment, configurable via AZURE_OPENAI_DEPLOYMENT_NAME)",
+  "llm_policy": "Model calls are reserved for key moments (goals, shots, cards, match phases) and recaps; every generated sentence passes the Grounding Verifier or is replaced by the pre-verified phrase bank.",
   "agents": [
     {
-      "id": "ingest_agent",
-      "name": "Telemetry Ingestion & Quality Sentinel",
-      "role": "Data Cleansing, Coordinate Normalization & Anomaly Filter",
-      "model": "gpt-4o-mini",
-      "temperature": 0.1,
-      "system_prompt": "You are the Telemetry Ingestion Agent for OmniPitch on Microsoft AI Foundry. Your role is to ingest synthetic spatio-temporal football events at 60Hz from Azure Event Hubs, validate coordinate boundaries (X: 0-100, Y: 0-100), compute preliminary pass difficulty ratings and expected goals (xG), and write cleansed events to the shared blackboard memory without latency.",
-      "tools": [
-        "normalize_pitch_coordinates",
-        "calculate_instantaneous_velocity",
-        "validate_event_schema"
-      ],
-      "handoff_to": "tactical_analyst_agent"
+      "id": "ingest",
+      "name": "Ingest",
+      "role": "Writes each synthetic event to the shared blackboard and derives running match state (xG, shots, possession, pass streaks).",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["MatchBlackboardMemory.record_event", "MatchBlackboardMemory.match_state"],
+      "handoff_to": "tactical_analyst"
     },
     {
-      "id": "tactical_analyst_agent",
-      "name": "Tactical Pattern & Spatial Dynamics Analyst",
-      "role": "Longitudinal Match Analysis & Tactical Metric Extraction",
-      "model": "gpt-4o",
-      "temperature": 0.2,
-      "system_prompt": "You are the Tactical Analyst Agent for OmniPitch on Microsoft AI Foundry. Your task is to analyze sliding windows of match telemetry, calculate tactical pressing intensity (PPDA), identify territorial overload in defensive/middle/attacking thirds, detect counterattack transitions, evaluate pass vector networks, and generate quantitative insights grounded in physical telemetry.",
-      "tools": [
-        "calculate_attack_momentum",
-        "evaluate_pressing_ppda",
-        "extract_pass_network_bottlenecks",
-        "query_longitudinal_season_stats"
-      ],
-      "handoff_to": "narrator_agent"
+      "id": "tactical_analyst",
+      "name": "Tactical Analyst",
+      "role": "Reads the recent event window: control vs chaos, defensive pressure, game rhythm, dominant side.",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["evaluate_tactical_state", "calculate_zonal_territory", "calculate_attack_momentum"],
+      "handoff_to": "lead_commentator"
     },
     {
-      "id": "narrator_agent",
-      "name": "Personalized Multi-Persona Match Storyteller",
-      "role": "Adaptive Narrative Generation across Personas & Languages",
-      "model": "gpt-4o",
-      "temperature": 0.7,
-      "system_prompt": "You are the Personalized Narrator Agent for OmniPitch on Microsoft AI Foundry. You adapt your broadcast storytelling style based on the requested persona (Tactical Analyst vs. Casual Fan) and language (English, Italian, Spanish, German). For analysts, use tactical terminology (overloads, half-spaces, high press traps, xG deltas). For fans, use energetic, emotive, and accessible narrative highlighting heroes, momentum swings, and dramatic context.",
-      "tools": [
-        "modulate_persona_tone",
-        "synthesize_multilingual_commentary",
-        "format_broadcast_overlay"
-      ],
-      "handoff_to": "verifier_agent"
+      "id": "lead_commentator",
+      "name": "Lead Commentator",
+      "role": "Live play-by-play in English, Italian, Spanish and German; analyst or fan voice; can take the side of the viewer's favourite club.",
+      "model": "Foundry deployment on key moments, phrase bank otherwise",
+      "execution": "foundry-llm-on-key-moments",
+      "tools": ["build_facts", "llm_prompts", "phrase bank (4 languages)"],
+      "handoff_to": "narrator"
     },
     {
-      "id": "verifier_agent",
-      "name": "Factual Grounding & Hallucination Guardrail",
-      "role": "Evidence Verification & Telemetry Audit Enforcement",
-      "model": "gpt-4o",
-      "temperature": 0.0,
-      "system_prompt": "You are the Grounding Verifier Agent for OmniPitch on Microsoft AI Foundry. You are the ultimate factual guardrail. You inspect generated narratives from the Narrator Agent and cross-reference every factual claim against the verified telemetry events stored in blackboard memory. You reject any unverified assertions, append explicit citation event IDs (e.g., EV-001, EV-002), and guarantee zero hallucination before public broadcast release.",
-      "tools": [
-        "audit_telemetry_citations",
-        "verify_player_identity_and_location",
-        "check_factual_consistency"
-      ],
-      "handoff_to": "broadcast_director_agent"
+      "id": "narrator",
+      "name": "Narrator / Co-commentator",
+      "role": "Explains why the moment matters (xG context, pressing, possession streaks, cards) for the selected persona and language; voices the co-commentator line on big moments.",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["insight_kind", "INSIGHTS bank (4 languages x 2 personas)"],
+      "handoff_to": "player_focus"
     },
     {
-      "id": "broadcast_director_agent",
-      "name": "Broadcast Overlays & Enterprise Workflow Director",
-      "role": "Machine-Readable Dispatch & Power Automate / Logic Apps Trigger",
-      "model": "gpt-4o",
-      "temperature": 0.2,
-      "system_prompt": "You are the Broadcast Director Agent for OmniPitch on Microsoft AI Foundry. You finalize broadcast overlay payloads, format Microsoft Teams Adaptive Cards for media production crews, trigger Power Automate workflows on critical match moments (goals, red cards, tactical swings), and export lakehouse Delta records for Microsoft Fabric OneLake.",
-      "tools": [
-        "generate_microsoft_adaptive_card",
-        "dispatch_power_automate_workflow",
-        "export_fabric_delta_lakehouse"
-      ],
-      "handoff_to": "client_broadcast_surface"
+      "id": "player_focus",
+      "name": "Player Focus",
+      "role": "Tracks the viewer's chosen player across the match: distance, sprints, pass completion, involvement.",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["MatchBlackboardMemory.get_player_stats"],
+      "handoff_to": "verifier"
+    },
+    {
+      "id": "verifier",
+      "name": "Grounding Verifier",
+      "role": "Checks every number and player name in generated text against the event facts and blackboard; rejects goal calls without a goal; forces a deterministic fallback on failure.",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["check_text", "cited event registry"],
+      "handoff_to": "broadcast"
+    },
+    {
+      "id": "broadcast",
+      "name": "Broadcast",
+      "role": "Emits the machine-readable overlay (headline, narrative, commentary lines, evidence IDs, agent trace) over SSE; feeds Teams Adaptive Cards and Fabric exports.",
+      "model": "deterministic",
+      "execution": "code",
+      "tools": ["BroadcastOverlayPayload", "Power Automate dispatcher", "Fabric Delta export"],
+      "handoff_to": "client"
+    },
+    {
+      "id": "recap",
+      "name": "Recap Writer",
+      "role": "Writes the half-time and full-time report (xG verdict, key moments, player of the match) in the viewer's language and persona.",
+      "model": "Foundry deployment when configured, phrase bank otherwise",
+      "execution": "foundry-llm-with-verifier",
+      "tools": ["get_match_center_overview", "check_text"],
+      "handoff_to": "client"
     }
-  ],
-  "evaluation_benchmarks": {
-    "groundedness_threshold": 0.95,
-    "factual_consistency_threshold": 0.98,
-    "relevance_threshold": 0.92,
-    "max_acceptable_latency_ms": 850
-  }
+  ]
 }

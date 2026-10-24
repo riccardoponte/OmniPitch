@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
 
@@ -50,13 +50,7 @@
         <a href="#matchcenter-section" data-jump-tab="tab-datatable">Data</a>
       </nav>
       <div class="topbar-meta">
-        <span class="sys-status"><span class="sys-dot"></span>Foundry online</span>
-        <select id="lang-select" class="custom-select select-compact" aria-label="Commentary language">
-          <option value="en">EN</option>
-          <option value="it">IT</option>
-          <option value="es">ES</option>
-          <option value="de">DE</option>
-        </select>
+        <span class="sys-status" id="sys-status" title="Where generated text comes from"><span class="sys-dot"></span><span id="sys-status-text">Agents ready</span></span>
       </div>
     </div>
   </header>
@@ -89,6 +83,7 @@
           <div class="sb-clock">
             <span class="live-tag"><span class="live-indicator"></span><span class="live-label">Pre-match</span></span>
             <span class="clock-value" id="match-clock">00:00</span>
+            <span class="added-badge hidden" id="added-badge" title="Stoppage time announced">+0</span>
           </div>
         </div>
 
@@ -114,6 +109,25 @@
         </div>
 
         <div class="control-group">
+          <label class="control-label" for="lang-select">Commentary</label>
+          <select id="lang-select" class="custom-select">
+            <option value="en">English</option>
+            <option value="it">Italiano</option>
+            <option value="es">Español</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="club-select">Your club</label>
+          <select id="club-select" class="custom-select">
+            <option value="">Neutral</option>
+            <option value="avalon_city">Avalon City</option>
+            <option value="solaria_rovers">Solaria Rovers</option>
+          </select>
+        </div>
+
+        <div class="control-group">
           <label class="control-label" for="player-select">Spotlight</label>
           <select id="player-select" class="custom-select">
             <option value="">Auto</option>
@@ -135,8 +149,17 @@
 
         <div class="control-spacer"></div>
 
+        <div class="control-group">
+          <span class="control-label">Pace</span>
+          <div class="segmented-control" id="speed-toggle">
+            <button class="seg-btn active" data-speed="1">1×</button>
+            <button class="seg-btn" data-speed="2">2×</button>
+            <button class="seg-btn" data-speed="4">4×</button>
+          </div>
+        </div>
+
         <div class="playback-controls">
-          <button id="btn-speak-commentary" class="btn-secondary btn-icon" title="Read commentary aloud" aria-label="Read commentary aloud">
+          <button id="btn-speak-commentary" class="btn-secondary btn-icon btn-voice" title="Commentary voice on/off" aria-label="Commentary voice" aria-pressed="false">
             <svg class="ic"><use href="#i-sound"/></svg>
           </button>
           <button id="btn-reset" class="btn-secondary btn-icon" title="Reset simulation" aria-label="Reset simulation">
@@ -157,27 +180,32 @@
         <span>Agent pipeline</span>
       </div>
       <ol class="pipeline-steps">
-        <li class="agent-step active" id="step-ingest">
+        <li class="agent-step" id="step-ingest">
           <span class="step-num">01</span>
-          <span class="step-content"><span class="step-name">Ingest</span><span class="step-role">Event Hubs</span></span>
+          <span class="step-content"><span class="step-name">Ingest</span><span class="step-role" data-role="Blackboard">Blackboard</span></span>
         </li>
-        <li class="agent-step" id="step-analyst">
+        <li class="agent-step" id="step-tactical_analyst">
           <span class="step-num">02</span>
-          <span class="step-content"><span class="step-name">Tactical analyst</span><span class="step-role">Pattern detection</span></span>
+          <span class="step-content"><span class="step-name">Tactical analyst</span><span class="step-role" data-role="Pattern detection">Pattern detection</span></span>
+        </li>
+        <li class="agent-step" id="step-lead_commentator">
+          <span class="step-num">03</span>
+          <span class="step-content"><span class="step-name">Commentator</span><span class="step-role" data-role="Play-by-play">Play-by-play</span></span>
         </li>
         <li class="agent-step" id="step-narrator">
-          <span class="step-num">03</span>
-          <span class="step-content"><span class="step-name">Narrator</span><span class="step-role">Persona narrative</span></span>
+          <span class="step-num">04</span>
+          <span class="step-content"><span class="step-name">Narrator</span><span class="step-role" data-role="Why it matters">Why it matters</span></span>
         </li>
         <li class="agent-step" id="step-verifier">
-          <span class="step-num">04</span>
-          <span class="step-content"><span class="step-name">Verifier</span><span class="step-role">Evidence audit</span></span>
+          <span class="step-num">05</span>
+          <span class="step-content"><span class="step-name">Verifier</span><span class="step-role" data-role="Evidence audit">Evidence audit</span></span>
         </li>
         <li class="agent-step" id="step-broadcast">
-          <span class="step-num">05</span>
-          <span class="step-content"><span class="step-name">Broadcast</span><span class="step-role">JSON overlay</span></span>
+          <span class="step-num">06</span>
+          <span class="step-content"><span class="step-name">Broadcast</span><span class="step-role" data-role="JSON overlay">JSON overlay</span></span>
         </li>
       </ol>
+      <div class="pipeline-claims" id="pipeline-claims" title="Claims checked by the Grounding Verifier">0 claims verified</div>
     </div>
 
     <!-- ===================== Main grid ===================== -->
@@ -311,16 +339,21 @@
           </div>
         </article>
 
-        <!-- Telemetry -->
+        <!-- Live commentary + raw feed -->
         <div class="telemetry-card panel">
           <div class="telemetry-header">
-            <div>
-              <span class="eyebrow">Azure ingest</span>
-              <h3>Event feed</h3>
+            <div class="feed-tabs" role="tablist">
+              <button class="feed-tab active" data-feed="commentary-list">Live commentary</button>
+              <button class="feed-tab" data-feed="telemetry-list">Event feed</button>
             </div>
             <span class="event-counter" id="event-counter">0 events</span>
           </div>
-          <div class="telemetry-list" id="telemetry-list">
+          <div class="commentary-list feed-pane" id="commentary-list" aria-live="polite">
+            <div class="telemetry-placeholder">
+              <div class="pulse-text">Commentary starts at kick-off. Turn on the voice to hear it.</div>
+            </div>
+          </div>
+          <div class="telemetry-list feed-pane hidden" id="telemetry-list">
             <div class="telemetry-placeholder">
               <div class="pulse-text">Feed idle — press Kick off.</div>
             </div>
@@ -337,9 +370,12 @@
           <span class="eyebrow">Match centre</span>
           <h2>Tactical dynamics</h2>
         </div>
-        <button id="btn-export-match-report" class="btn-ghost" title="Download the match dossier as JSON">
-          <svg class="ic"><use href="#i-download"/></svg>Match report
-        </button>
+        <div class="matchcenter-actions">
+          <button id="btn-open-recap" class="btn-ghost" title="Read the automated match report">Report</button>
+          <button id="btn-export-match-report" class="btn-ghost" title="Download the match dossier as JSON">
+            <svg class="ic"><use href="#i-download"/></svg>JSON
+          </button>
+        </div>
       </div>
 
       <div class="matchcenter-tabs" id="matchcenter-tabs" role="tablist">
@@ -475,19 +511,20 @@
         <div class="foundry-hub-card">
           <div class="foundry-header-wrap">
             <div class="foundry-title-group">
-              <span class="eyebrow">Microsoft AI Foundry · Agent Service</span>
-              <h3>Five agents, one shared blackboard</h3>
+              <span class="eyebrow">Microsoft Foundry · multi-agent pipeline</span>
+              <h3>Eight agents, one shared blackboard</h3>
               <p class="foundry-desc">
-                Agents built on the Microsoft Agent Framework share match state, hand off in sequence, and every sentence is checked against event IDs before it reaches air. Verified moments can fire Power Automate / Logic Apps flows.
+                Each event is written to a shared blackboard, then handed from agent to agent. The commentator calls a Foundry model only on moments that matter; every number and name it produces is checked by the Grounding Verifier before it reaches air, and anything that fails is replaced by a pre-verified line. Verified moments can fire Power Automate / Logic Apps flows.
               </p>
             </div>
             <div class="foundry-eval-ribbon">
-              <div class="eval-stat-pill"><span class="eval-num accent">100%</span><span class="eval-lbl">Grounding</span></div>
-              <div class="eval-stat-pill"><span class="eval-num">99.2%</span><span class="eval-lbl">Factual consistency</span></div>
-              <div class="eval-stat-pill"><span class="eval-num">GPT-4o</span><span class="eval-lbl">Primary model</span></div>
-              <div class="eval-stat-pill"><span class="eval-num">&lt;85<small>ms</small></span><span class="eval-lbl">Pipeline latency</span></div>
+              <div class="eval-stat-pill"><span class="eval-num accent" id="tel-grounding">—</span><span class="eval-lbl">Claims grounded</span></div>
+              <div class="eval-stat-pill"><span class="eval-num" id="tel-claims">0</span><span class="eval-lbl">Claims checked</span></div>
+              <div class="eval-stat-pill"><span class="eval-num" id="tel-fallbacks">0</span><span class="eval-lbl">Fallbacks used</span></div>
+              <div class="eval-stat-pill"><span class="eval-num" id="tel-latency">—</span><span class="eval-lbl">Agent time / event</span></div>
             </div>
           </div>
+          <div class="foundry-model-status" id="foundry-model-status"></div>
 
           <div class="foundry-agents-section">
             <h4 class="section-sub-title">Agent chain</h4>
@@ -542,8 +579,8 @@
     </section>
 
     <footer class="app-footer">
-      <span>OmniPitch · Synthetic match data — all clubs and players are fictional.</span>
-      <span>Built for Inside the Game · Microsoft × Premier League</span>
+      <span>OmniPitch · Synthetic match data — all clubs, players and competitions are fictional.</span>
+      <span>Built for Inside the Game: Developer Hackathon</span>
     </footer>
   </div>
 
@@ -586,6 +623,27 @@
         </div>
         <div class="modal-tab-pane" id="team-tab-profile">
           <div class="team-profile-grid" id="team-profile-content"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Recap modal ===================== -->
+  <div id="recap-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="recap-title">
+    <div class="modal-card recap-card">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow" id="recap-kind">Full-time report</span>
+          <h2 id="recap-title">—</h2>
+          <span class="modal-team-meta" id="recap-standfirst"></span>
+        </div>
+        <button class="modal-close-btn" id="btn-close-recap" aria-label="Close"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="recap-body" id="recap-body"></div>
+        <div class="recap-footer">
+          <span class="recap-source" id="recap-source"></span>
+          <button class="btn-ghost" id="btn-speak-recap"><svg class="ic"><use href="#i-sound"/></svg>Read aloud</button>
         </div>
       </div>
     </div>
@@ -658,6 +716,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

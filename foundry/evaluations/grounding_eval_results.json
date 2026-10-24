@@ -1,0 +1,117 @@
+{
+  "matches_simulated": 80,
+  "faithful_texts": 22288,
+  "false_rejection_rate": 0.0,
+  "hallucinations_injected": 40228,
+  "detection_rate": 0.9977,
+  "detection_by_type": {
+    "fake_goal": 1.0,
+    "wrong_player": 1.0,
+    "wrong_number": 0.9873
+  },
+  "cases_by_type": {
+    "fake_goal": 21904,
+    "wrong_player": 10984,
+    "wrong_number": 7340
+  },
+  "faithful_by_language": {
+    "en": {
+      "faithful": 5572,
+      "false_rejections": 0
+    },
+    "it": {
+      "faithful": 5572,
+      "false_rejections": 0
+    },
+    "es": {
+      "faithful": 5572,
+      "false_rejections": 0
+    },
+    "de": {
+      "faithful": 5572,
+      "false_rejections": 0
+    }
+  },
+  "examples": [
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance for Avalon City. Avalon City are knocking on the door — that's 20 attempts now."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Occasione per Solaria Rovers. Tiro numero 2 di Solaria Rovers (0.09 xG). xG totali: Avalon City 0.00 – 0.62 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "GOL — Silas Brandt (90+3'). Silas Brandt non perdona! Solaria Rovers sale a 19 e lo stadio esplode."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Avalon City. Disparo número 20 de Avalon City (0.07 xG). xG acumulado: Avalon City 0.20 – 1.33 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance für Avalon City. Avalon City drückt, schon 20 Abschlüsse!"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "TOR — Silas Brandt (90+20'). Silas Brandt trifft eiskalt! Solaria Rovers jetzt bei 2, das Stadion bebt."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Avalon City in total control. 23 consecutive passes for Avalon City; control index 0.95. They are dictating tempo, not reacting."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance for Avalon City. Shot 38 for Avalon City (0.26 xG). Running xG: Avalon City 1.61 – 0.30 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance for Avalon City. Avalon City are knocking on the door — that's 38 attempts now."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "20 minuti di recupero. Altri 3 minuti — ci sarà un colpo di scena?"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Occasione per Avalon City. Avalon City spinge, sono già 26 conclusioni!"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Avalon City. Disparo número 3 de Avalon City (0.31 xG). xG acumulado: Avalon City 0.82 – 0.31 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Solaria Rovers. Disparo número 16 de Solaria Rovers (0.09 xG). xG acumulado: Avalon City 0.82 – 0.27 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "3 minutos de añadido. Añadido: 20 minutos. Avalon City 0–0 Solaria Rovers; xG 0.87 – 0.27."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Avalon City. Disparo número 26 de Avalon City (0.26 xG). xG acumulado: Avalon City 1.61 – 0.30 Solaria Rovers."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Solaria Rovers. ¡Solaria Rovers aprieta, ya van 15 disparos!"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Ocasión para Avalon City. ¡Avalon City aprieta, ya van 38 disparos!"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "3 Minuten Nachspielzeit. Nachspielzeit: 20 Minuten. Avalon City 0–0 Solaria Rovers; xG 0.87 – 0.27."
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance für Solaria Rovers. Solaria Rovers drückt, schon 15 Abschlüsse!"
+    },
+    {
+      "kind": "missed_wrong_number",
+      "text": "Chance für Avalon City. Avalon City drückt, schon 38 Abschlüsse!"
+    }
+  ]
+}

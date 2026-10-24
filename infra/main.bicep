@@ -14,6 +14,22 @@ param environmentName string = 'dev'
 @description('Unique application suffix')
 param appSuffix string = uniqueString(resourceGroup().id)
 
+@description('Container image for the OmniPitch app (e.g. <registry>.azurecr.io/omnipitch:latest)')
+param containerImage string
+
+@description('Microsoft Foundry / Azure OpenAI endpoint used by the commentator and recap agents (optional)')
+param foundryEndpoint string = ''
+
+@secure()
+@description('Microsoft Foundry / Azure OpenAI API key (optional)')
+param foundryApiKey string = ''
+
+@description('Model deployment name in Microsoft Foundry')
+param foundryDeployment string = 'gpt-4o-mini'
+
+@description('Provision Cosmos DB for match-state persistence (not used by the in-memory demo)')
+param deployCosmos bool = false
+
 var appName = 'omnipitch-${environmentName}-${appSuffix}'
 var logAnalyticsName = 'log-${appName}'
 var appInsightsName = 'appi-${appName}'
@@ -66,7 +82,7 @@ resource matchEventHub 'Microsoft.EventHub/namespaces/eventhubs@2023-01-01-previ
 }
 
 // 4. Azure Cosmos DB (Distributed Match State & Telemetry)
-resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
+resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = if (deployCosmos) {
   name: cosmosDbName
   location: location
   kind: 'GlobalDocumentDB'
@@ -84,7 +100,7 @@ resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
   }
 }
 
-resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-11-15' = {
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-11-15' = if (deployCosmos) {
   parent: cosmosDbAccount
   name: 'omnipitch'
   properties: {
@@ -121,12 +137,22 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 8000
         transport: 'auto'
       }
+      secrets: [
+        {
+          name: 'foundry-api-key'
+          value: empty(foundryApiKey) ? 'not-configured' : foundryApiKey
+        }
+        {
+          name: 'eventhub-connection'
+          value: listKeys(resourceId('Microsoft.EventHub/namespaces/authorizationRules', eventHubNamespace.name, 'RootManageSharedAccessKey'), '2023-01-01-preview').primaryConnectionString
+        }
+      ]
     }
     template: {
       containers: [
         {
           name: 'omnipitch-api'
-          image: 'mcr.microsoft.com/azure-cli:latest' // Placeholder replaced during GitHub Actions CI/CD
+          image: containerImage
           resources: {
             cpu: json('0.5')
             memory: '1.0Gi'
@@ -144,12 +170,39 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'AZURE_EVENT_HUB_NAME'
               value: matchEventHub.name
             }
+            {
+              name: 'AZURE_EVENT_HUB_CONNECTION_STRING'
+              secretRef: 'eventhub-connection'
+            }
+            {
+              name: 'AZURE_AI_FOUNDRY_ENDPOINT'
+              value: foundryEndpoint
+            }
+            {
+              name: 'AZURE_AI_FOUNDRY_API_KEY'
+              secretRef: 'foundry-api-key'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT_NAME'
+              value: foundryDeployment
+            }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/api/health'
+                port: 8000
+              }
+            }
           ]
         }
       ]
+      // Match sessions live in memory, so one replica keeps SSE and REST on the same state.
+      // Moving sessions to Cosmos DB / Redis is what unlocks horizontal scale.
       scale: {
         minReplicas: 1
-        maxReplicas: 5
+        maxReplicas: 1
       }
     }
   }

@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "omnipitch-live": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp/"
+    },
+    "omnipitch-local": {
+      "type": "stdio",
+      "command": "omnipitch-mcp"
+    }
+  }
+}
