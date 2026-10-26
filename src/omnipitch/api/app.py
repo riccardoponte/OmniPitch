@@ -377,7 +377,9 @@ async def get_player_dossier(player_id: str, match_id: Optional[str] = "MATCH-20
         "appearances": s_raw.get("appearances", 28),
         "goals": s_raw.get("goals", 0),
         "assists": s_raw.get("assists", 0),
-        "xg_per_90": s_raw.get("xg_created_total", s_raw.get("xg_per_90", 0.25)),
+        # Season xG is stored as a total; normalise it by minutes played
+        "xg_per_90": s_raw.get("xg_per_90") or round(
+            s_raw.get("xg_created_total", 0.0) / max(s_raw.get("minutes", 0) / 90.0, 1.0), 2),
         "pass_completion_rate": s_raw.get("pass_accuracy", s_raw.get("pass_completion_rate", 85.0)),
         "top_speed_kmh": s_raw.get("top_speed_kmh", 33.5),
     }

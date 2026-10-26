@@ -263,3 +263,8 @@ def test_mcp_streamable_http_endpoint_lists_tools():
         assert listed.status_code == 200
         for name in ("get_match_state", "get_live_commentary", "explain_moment", "get_match_recap"):
             assert name in listed.text
+
+
+def test_player_dossier_xg_per_90_is_a_rate():
+    data = client.get("/api/players/AVA-08").json()
+    assert 0.0 <= data["season_2025_26"]["xg_per_90"] < 1.5
