@@ -1,3 +1,163 @@
+🌐 **Lingua / Language:** [🇮🇹 Italiano](#italiano) · [🇬🇧 English](#english)
+
+---
+<a id="italiano"></a>
+
+# OmniPitch
+
+**Una trasmissione calcistica in diretta scritta da agenti — e verificata prima di andare in onda.**
+
+OmniPitch trasforma un flusso di eventi di gara sintetici in un'esperienza di trasmissione completa: telecronaca play-by-play in diretta in quattro lingue (letta ad alta voce), un sottopancia ("lower third") sullo schermo con la spiegazione "perché è importante", un match center tattico e report automatizzati di fine primo tempo e fine partita. Una catena di agenti specializzati condivide una lavagna comune (`MatchBlackboardMemory`); un Grounding Verifier verifica ogni numero e ogni nome rispetto al registro degli eventi, affinché la narrazione non si discosti mai dai dati.
+
+Sviluppato per **Inside the Game: Developer Hackathon** (Microsoft × Premier League). Tutti i club, i giocatori e le competizioni sono fittizi.
+
+---
+
+## Cosa fa
+
+| Fase della sfida | In OmniPitch |
+| --- | --- |
+| **Ingest** | Un motore deterministico simula un'intera partita — calcio d'inizio, due tempi da 45 minuti, la lavagna dei minuti di recupero del quarto uomo, intervallo, fischio finale. Passaggi (riusciti e persi), tiri (gol / parati / fuori bersaglio / respinti), contrasti, intercettazioni, pressing, falli, cartellini gialli e rossi. Opzionalmente replicato su **Azure Event Hubs**. |
+| **Interpret** | xG progressivi, tiri, possesso palla, serie di passaggi, valutazioni dei giocatori, momentum d'attacco per minuto (recupero ombreggiato), mappa dei tiri, difficoltà dei passaggi, velocità della palla e del tiro. |
+| **Explain** | Il Narratore spiega *perché* un momento è importante: contesto xG di un gol, una grande parata, pressing che recupera palla alto, serie di possesso, cosa cambia con un cartellino rosso. |
+| **Render** | Overlay machine-readable via SSE: titolo, narrazione, battute di telecronaca, ID degli eventi di evidenza, tracciamento per singolo agente, priorità di visualizzazione per il sottopancia. |
+| **Personalize** | Voce Analista vs Tifoso, quattro lingue, telecronaca per club del cuore (esulta per i *tuoi* gol e si rammarica per quelli dell'avversario), riflettori sul singolo giocatore, velocità di riproduzione, telecronaca parlata. |
+
+### Telecronaca in diretta ("telecronaca")
+- **Telecronista principale**: una riga per evento, in English, Italiano, Español o Deutsch.
+- **Seconda voce (co-commentatore)**: interviene nei momenti chiave con la spiegazione.
+- **Voce**: la sintesi vocale del browser legge le battute nella lingua selezionata, con una seconda voce per il commentatore tecnico. I gol e i cartellini rossi saltano la coda; i passaggi di routine vengono letti solo quando la cabina di commento è libera, evitando che la voce accumuli ritardo rispetto alla partita.
+- **Orologio di gara reale**: `45+2'`, `90+4'`, badge dei minuti di recupero sul tabellone, pausa all'intervallo con report del primo tempo e report conclusivo al fischio finale.
+
+---
+
+## Gli agenti
+
+Ogni evento attraversa la catena seguente; tutti gli agenti leggono e scrivono sulla stessa `MatchBlackboardMemory`.
+
+| # | Agente | Ruolo | Eseguito su |
+| --- | --- | --- | --- |
+| 1 | Ingest | Registra l'evento, calcola lo stato progressivo (xG, tiri, possesso, serie di passaggi) | code |
+| 2 | Tactical Analyst | Controllo vs caos, pressione difensiva, ritmo di gara nella finestra temporale recente | code |
+| 3 | Lead Commentator | Riga play-by-play in diretta, persona + lingua + squadra del cuore | **Modello Foundry nei momenti chiave**, phrase bank altrimenti |
+| 4 | Narrator / Co-commentator | "Perché è importante", titolo in sovrimpressione | code |
+| 5 | Player Focus | Riflettori puntati sul giocatore scelto dallo spettatore | code |
+| 6 | Grounding Verifier | Controlla ogni numero e nome di giocatore; blocca le chiamate di gol in assenza di gol | code |
+| 7 | Broadcast | Emette l'overlay; ricorre a una riga deterministica se la verifica fallisce | code |
+| 8 | Recap Writer | Report di fine primo tempo e fine partita (verdetto xG, momenti chiave, migliore in campo) | **Modello Foundry**, phrase bank altrimenti |
+
+**Le chiamate ai modelli avvengono solo dove conta.** Il telecronista chiama il deployment Microsoft Foundry per gol, tiri, cartellini e fasi della partita; il recap writer lo chiama all'intervallo e al fischio finale. Ogni frase generata deve superare il verificatore, altrimenti viene sostituita da una riga pre-verificata della phrase bank. Senza un endpoint Foundry l'intero sistema funziona comunque tramite la phrase bank, e la UI lo segnala (`Local agents` nella barra superiore e nella scheda Agents).
+
+### Grounding, misurato
+
+`python foundry/evaluations/run_grounding_eval.py` gioca 80 partite complete (10 seed × 4 lingue × 2 personas), verifica ogni testo generato, quindi inietta un'allucinazione in ciascuno (un numero modificato, un giocatore non coinvolto, una finta chiamata di gol):
+
+| Metrica | Risultato |
+| --- | --- |
+| Testi fedeli verificati | 22.288 |
+| Falsi rifiuti | **0.0 %** |
+| Allucinazioni iniettate rilevate | **99.8 %** (40.228 casi) |
+| — finte chiamate di gol | 100 % |
+| — giocatore errato | 100 % |
+| — numeri alterati | 98.7 % |
+
+I restanti casi mancati sono conteggi privi di etichetta che per coincidenza risultano uguali a un altro numero sulla lavagna; le affermazioni etichettate (xG, km/h, metri, %, indice di controllo / pressione, punteggi) devono corrispondere esattamente al fatto rispettivo. I risultati vengono scritti in `foundry/evaluations/grounding_eval_results.json`. L'interfaccia utente live mostra i totali progressivi dello stesso verificatore (affermazioni verificate, percentuale di grounding, fallback).
+
+---
+
+## Tecnologie Microsoft
+
+- **Microsoft Foundry** — Deployment Azure OpenAI chat-completions utilizzato dal Lead Commentator e dal Recap Writer (`agents/foundry_client.py`), con budget di latenza, tracciamento e fallback verificato.
+- **Model Context Protocol** — Un vero server MCP (SDK ufficiale, Streamable HTTP su `/mcp/` e stdio tramite `omnipitch-mcp`) che espone la partita *in tempo reale*: `get_match_state`, `get_live_commentary`, `explain_moment`, `get_match_recap`, `get_player_live_stats`, `advance_match`. Pronto per la **Modalità Agente di GitHub Copilot** tramite `.vscode/mcp.json`, o per un agente Foundry.
+- **Azure Container Apps** — `Dockerfile` + `infra/main.bicep` (Log Analytics, Application Insights, Event Hubs, Container App con secret di Foundry ed Event Hubs, probe di integrità).
+- **Azure Event Hubs** — Ogni evento può essere replicato su un hub per i consumer di Functions / Fabric Eventstream (`integrations/event_hubs.py`).
+- **Microsoft Fabric** — Tabelle eventi e giocatori pronte per Delta (`/api/match/{id}/fabric/export`, esportazione CSV).
+- **Power Automate / Teams** — Dispatcher di Adaptive Card (v1.5) per gol, cambi tattici e incidenti.
+- **GitHub Actions** — CI che esegue la suite di test su Python 3.10–3.12.
+
+---
+
+## Esecuzione
+
+### In locale
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+uvicorn omnipitch.api:app --port 8000
+```
+Apri http://localhost:8000, scegli una lingua, una squadra e un ritmo, attiva la voce, premi **Kick off**. Su Windows puoi anche fare doppio clic su `START_OMNIPITCH.bat`.
+
+### Con Microsoft Foundry
+Copia `.env.example` in `.env` e imposta:
+```
+AZURE_AI_FOUNDRY_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_AI_FOUNDRY_API_KEY=<key>
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o-mini
+```
+La barra superiore passa da `Local agents` a `Foundry · <deployment>`; le righe di commento scritte dal modello mostrano il tag `Foundry` nel feed.
+
+### Docker / Azure Container Apps
+```bash
+docker build -t omnipitch .
+docker run -p 8000:8000 --env-file .env omnipitch
+
+# Distribuzione con un solo comando dal sorgente
+az containerapp up --name omnipitch --resource-group rg-omnipitch --location westeurope --source . --ingress external --target-port 8000
+
+# Oppure l'intero stack Bicep (Event Hubs, App Insights, Container App)
+az deployment group create -g rg-omnipitch -f infra/main.bicep -p infra/main.parameters.json -p containerImage=<registry>/omnipitch:latest
+```
+Le sessioni di gara risiedono in memoria, quindi la Container App viene eseguita con una singola replica; spostare le sessioni su Cosmos DB o Redis è la strada per la scalabilità orizzontale.
+
+### MCP
+Con l'applicazione in esecuzione, punta qualsiasi client MCP su `http://localhost:8000/mcp/` (VS Code / GitHub Copilot lo rileva automaticamente da `.vscode/mcp.json`). Prova: *"Qual è il punteggio, e perché l'ultimo gol è stato importante?"* — l'agente chiama `get_match_state` ed `explain_moment`.
+
+---
+
+## API
+
+| Endpoint | Scopo |
+| --- | --- |
+| `GET /api/match/{id}/overlays/stream?include_events=true&lang=it&persona=fan&club=avalon_city&player=Julian%20Drake` | SSE: `match_event`, `broadcast_overlay`, `match_recap`, `stream_end` |
+| `GET /api/match/{id}/recap?kind=full_time&lang=de` | Report automatizzato |
+| `GET /api/match/{id}/agents/telemetry` | Latenza per agente, claim verificati / respinti, utilizzo LLM, fallback |
+| `GET /api/match/{id}/matchcenter/overview` | Momentum, statistiche, formazioni, mappa dei tiri, cronologia (timeline) |
+| `POST /api/match/{id}/reset` | Nuova partita |
+| `/mcp/` | Model Context Protocol (Streamable HTTP) |
+
+Documentazione interattiva su `/docs`.
+
+---
+
+## Test
+```bash
+pytest -q          # 50 test: timeline del motore, recupero, telecronaca in 4 lingue, verificatore, recap, SSE, MCP
+```
+
+## Dati e conformità
+- Dati di gara al 100% sintetici e deterministici (con seed); tutti i club, i giocatori, le competizioni e gli stadi sono fittizi.
+- Nessun filmato di gara, nomi di club reali o marchi registrati di terze parti.
+- Nessun segreto nel controllo versione; le credenziali di Foundry ed Event Hubs provengono da variabili d'ambiente / secret di Container Apps.
+
+## Struttura del progetto
+```
+src/omnipitch/
+  generator/engine.py        motore di gara: tempi, recupero, eventi, cartellini
+  agents/                    telecronaca, narratore, verificatore, recap, orchestratore, memoria, server MCP
+  api/app.py                 FastAPI: stream SSE, REST, mount MCP
+  integrations/              publisher Event Hubs, schede Power Automate
+  web/static/                dashboard di trasmissione (vanilla JS + canvas)
+foundry/                     manifest dell'agente, valutazione del grounding
+infra/                       Bicep per Azure Container Apps
+tests/                       suite di test pytest
+```
+
+Licenza MIT.
+
+---
+<a id="english"></a>
+
 # OmniPitch
 
 **A live football broadcast written by agents — and fact-checked before it reaches air.**
